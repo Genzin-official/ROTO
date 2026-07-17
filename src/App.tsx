@@ -413,43 +413,53 @@ export default function App() {
 
             {/* TAB 1: 2D drawing canvas layered over active looping video */}
             {activeTab === 'drawing' ? (
-              <div id="video-canvas-stage-wrapper" className="relative w-[90%] aspect-video rounded-none overflow-hidden bg-black border border-white/15 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex items-center justify-center">
-                
-                {/* Embedded HTML5 Core Player */}
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  onTimeUpdate={handleTimeUpdate}
-                  onEnded={handleVideoEnded}
-                  loop={false}
-                  muted
-                  playsInline
-                  crossOrigin="anonymous"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-contain pointer-events-none"
-                />
+              <div className="flex flex-col items-center gap-3 w-full">
+                <div id="video-canvas-stage-wrapper" className="relative w-[90%] aspect-video rounded-none overflow-hidden bg-black border border-white/15 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex items-center justify-center">
+                  
+                  {/* Embedded HTML5 Core Player */}
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    onTimeUpdate={handleTimeUpdate}
+                    onEnded={handleVideoEnded}
+                    loop={false}
+                    muted
+                    playsInline
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-contain pointer-events-none"
+                  />
 
-                {/* Overlying Interactive SVG Canvas */}
-                <RotoscopeCanvas
-                  currentFrameIndex={currentFrameIndex}
-                  frames={frames}
-                  onUpdateFrameStrokes={handleUpdateFrameStrokes}
-                  selectedColor={selectedColor}
-                  selectedWidth={selectedWidth}
-                  selectedStyle={selectedStyle}
-                  selectedTool={selectedTool}
-                  videoRef={videoRef}
-                  showOnionSkin={showOnionSkin}
-                  onionSkinRange={onionSkinRange}
-                  selectedStrokeId={selectedStrokeId}
-                  onSetSelectedStrokeId={setSelectedStrokeId}
-                  pointEditMode={pointEditMode}
-                />
+                  {/* Overlying Interactive SVG Canvas */}
+                  <RotoscopeCanvas
+                    currentFrameIndex={currentFrameIndex}
+                    frames={frames}
+                    onUpdateFrameStrokes={handleUpdateFrameStrokes}
+                    selectedColor={selectedColor}
+                    selectedWidth={selectedWidth}
+                    selectedStyle={selectedStyle}
+                    selectedTool={selectedTool}
+                    videoRef={videoRef}
+                    showOnionSkin={showOnionSkin}
+                    onionSkinRange={onionSkinRange}
+                    selectedStrokeId={selectedStrokeId}
+                    onSetSelectedStrokeId={setSelectedStrokeId}
+                    pointEditMode={pointEditMode}
+                  />
 
-                {/* 2D Mode overlay label HUD */}
-                <div className="absolute top-4 left-4 bg-[#080808]/90 border border-white/20 px-3 py-1 text-[9px] font-mono text-white select-none pointer-events-none flex items-center gap-1.5 shadow-md">
-                  <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse" />
-                  <span>FRAME 0{currentFrameIndex + 424}</span>
+                  {/* 2D Mode overlay label HUD */}
+                  <div className="absolute top-4 left-4 bg-[#080808]/90 border border-white/20 px-3 py-1 text-[9px] font-mono text-white select-none pointer-events-none flex items-center gap-1.5 shadow-md">
+                    <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse" />
+                    <span>FRAME 0{currentFrameIndex + 424}</span>
+                  </div>
+                </div>
+
+                {/* Sub-canvas timeline frame number badge */}
+                <div
+                  id="external-frames-indicator"
+                  className="bg-[#080808]/90 border border-white/15 px-4 py-1.5 text-[11px] font-mono text-cyan-400 select-none z-20 tracking-wider shadow-lg flex items-center gap-1.5 font-bold"
+                >
+                  (   Frames [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(TOTAL_FRAMES).padStart(2, '0')}]   )
                 </div>
               </div>
             ) : (

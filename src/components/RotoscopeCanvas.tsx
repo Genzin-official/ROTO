@@ -639,6 +639,14 @@ export default function RotoscopeCanvas({
         className="block touch-none"
       />
       
+      {/* Frame number display directly under/overlaying the bottom of the drawing canvas */}
+      <div
+        id="rotoscope-frame-badge"
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#080808]/95 border border-cyan-500/30 px-3.5 py-1.5 text-[11px] font-mono text-cyan-400 select-none pointer-events-none flex items-center gap-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.8)] backdrop-blur-sm z-30 tracking-widest font-bold border-t border-t-cyan-400/50"
+      >
+        <span>(   Frames [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(frames.length).padStart(2, '0')}]   )</span>
+      </div>
+      
       {/* Dynamic draw-assist HUD HUD overlays */}
       {selectedTool === 'polygon' && activePoints.length > 0 && (
         <div id="polygon-help-badge" className="absolute top-4 left-4 bg-[#080808]/95 border border-white/20 px-3 py-1.5 rounded-none text-[10px] text-white/80 font-mono flex items-center gap-2 backdrop-blur-sm pointer-events-none select-none uppercase tracking-wider">
