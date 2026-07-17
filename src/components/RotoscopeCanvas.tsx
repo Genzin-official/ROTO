@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Stroke, Point, FrameData } from '../types';
+import { Stroke, Point, FrameData, CognitiveMemory } from '../types';
 import { Sparkles, Trash2, Edit2, RotateCcw } from 'lucide-react';
 
 interface RotoscopeCanvasProps {
@@ -14,13 +14,14 @@ interface RotoscopeCanvasProps {
   selectedColor: string;
   selectedWidth: number;
   selectedStyle: Stroke['style'];
-  selectedTool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point';
+  selectedTool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point' | 'magic';
   videoRef: React.RefObject<HTMLVideoElement | null>;
   showOnionSkin: boolean;
   onionSkinRange: number;
   selectedStrokeId: string | null;
   onSetSelectedStrokeId: (id: string | null) => void;
   pointEditMode: 'add' | 'remove';
+  cognitiveMemory?: CognitiveMemory;
 }
 
 export default function RotoscopeCanvas({
@@ -37,6 +38,7 @@ export default function RotoscopeCanvas({
   selectedStrokeId,
   onSetSelectedStrokeId,
   pointEditMode,
+  cognitiveMemory,
 }: RotoscopeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -54,6 +56,108 @@ export default function RotoscopeCanvas({
     setTempStrokePoints(null);
     setDraggedNodeIndex(-1);
   }, [selectedStrokeId, currentFrameIndex]);
+
+  // Magic masking states
+  const [isMagicMasking, setIsMagicMasking] = useState(false);
+  const [magicFeedback, setMagicFeedback] = useState<{ x: number; y: number } | null>(null);
+
+  // Helper to capture the current active frame from the HTML5 video player
+  const captureFrameBase64 = (): string | null => {
+    const video = videoRef.current;
+    if (!video) return null;
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 360;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      // Draw active frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    } catch (e) {
+      console.error('Frame capture failed due to CORS or element loading:', e);
+      return null;
+    }
+  };
+
+  // Trigger server-side AI Magic Mask background removing / object segmentation
+  const triggerMagicMask = async (clickX?: number, clickY?: number) => {
+    const video = videoRef.current;
+    if (!video) {
+      alert("Video playback engine is not loaded.");
+      return;
+    }
+
+    const frameImg = captureFrameBase64();
+    if (!frameImg) {
+      alert("Could not capture the current frame buffer. Verify the video source.");
+      return;
+    }
+
+    setIsMagicMasking(true);
+    if (clickX !== undefined && clickY !== undefined) {
+      setMagicFeedback({ x: clickX, y: clickY });
+    } else {
+      setMagicFeedback({ x: 50, y: 50 }); // Center for auto subject cutout
+    }
+
+    try {
+      const response = await fetch('/api/magic-mask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: frameImg,
+          clickX,
+          clickY,
+          mode: clickX !== undefined ? 'click' : 'subject',
+          cognitiveMemory,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API server returned error status.');
+      }
+
+      const data = await response.json();
+      if (data.points && Array.isArray(data.points) && data.points.length > 0) {
+        const newStroke: Stroke = {
+          id: `magic-mask-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          points: data.points,
+          color: selectedColor,
+          width: selectedWidth,
+          glowColor: selectedColor + 'aa',
+          glowWidth: selectedWidth * 3.5,
+          isClosed: true,
+          style: selectedStyle,
+        };
+
+        onUpdateFrameStrokes([...strokes, newStroke]);
+        onSetSelectedStrokeId(newStroke.id);
+      } else {
+        throw new Error('AI returned empty or invalid coordinate points.');
+      }
+    } catch (err: any) {
+      console.error('AI Magic Mask failed:', err);
+      alert(`AI Magic Mask failed: ${err.message || 'Unknown error'}. Ensure GEMINI_API_KEY is configured in Settings > Secrets.`);
+    } finally {
+      setIsMagicMasking(false);
+      setMagicFeedback(null);
+    }
+  };
+
+  // Listen to background removal (auto-subject mask) events from ControlPanel
+  useEffect(() => {
+    const handleAutoSubjectMask = () => {
+      triggerMagicMask();
+    };
+    window.addEventListener('trigger-magic-subject-mask', handleAutoSubjectMask);
+    return () => {
+      window.removeEventListener('trigger-magic-subject-mask', handleAutoSubjectMask);
+    };
+  }, [currentFrameIndex, strokes, selectedColor, selectedWidth, selectedStyle]);
 
   // Observe container size to match the video dimensions perfectly
   useEffect(() => {
@@ -159,6 +263,16 @@ export default function RotoscopeCanvas({
         ctx.lineWidth = stroke.width * pulse;
       }
 
+      // If the path is closed (e.g., polygon vector mask), fill the shape like a high-end mask overlay in Photopea
+      if (stroke.isClosed) {
+        ctx.save();
+        ctx.fillStyle = strokeColor;
+        ctx.globalAlpha = opacity * 0.28; // semi-transparent mask color
+        ctx.shadowBlur = 0; // turn off shadow blur for the inner fill
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Neon glowing drop-shadow drawing technique
       ctx.strokeStyle = strokeColor;
       ctx.shadowColor = glowColor;
@@ -217,26 +331,42 @@ export default function RotoscopeCanvas({
       const activeStroke = strokes.find((s) => s.id === selectedStrokeId);
       const pointsToDraw = tempStrokePoints || activeStroke?.points;
       
-      if (pointsToDraw) {
+      if (pointsToDraw && pointsToDraw.length > 0) {
+        // Draw elegant polygon selection path boundary (marching-ants dashed outline, high visibility)
+        ctx.save();
+        ctx.beginPath();
+        const start = toPx(pointsToDraw[0]);
+        ctx.moveTo(start.x, start.y);
+        for (let i = 1; i < pointsToDraw.length; i++) {
+          const pt = toPx(pointsToDraw[i]);
+          ctx.lineTo(pt.x, pt.y);
+        }
+        if (activeStroke?.isClosed) {
+          ctx.closePath();
+        }
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]); // Dashed selection line
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw professional vector square anchor points (handles)
         pointsToDraw.forEach((pt, idx) => {
           const px = toPx(pt);
+          const size = idx === draggedNodeIndex ? 7.5 : 6;
           
-          // Outer selection ring
           ctx.save();
+          // Subtle glow for selected/dragged node
+          if (idx === draggedNodeIndex) {
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 8;
+          }
+          
           ctx.beginPath();
-          ctx.arc(px.x, px.y, 8, 0, Math.PI * 2);
-          ctx.strokeStyle = idx === draggedNodeIndex ? '#ffffff' : 'rgba(0, 240, 255, 0.4)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          ctx.restore();
-
-          // Inner circular vertex anchor
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(px.x, px.y, idx === draggedNodeIndex ? 5.5 : 4.5, 0, Math.PI * 2);
-          ctx.fillStyle = idx === draggedNodeIndex ? '#ffffff' : '#00f0ff';
-          ctx.strokeStyle = '#000000';
-          ctx.lineWidth = 1.5;
+          ctx.rect(px.x - size / 2, px.y - size / 2, size, size);
+          ctx.fillStyle = idx === draggedNodeIndex ? '#ffffff' : '#00b0ff';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.2;
           ctx.fill();
           ctx.stroke();
           ctx.restore();
@@ -378,6 +508,11 @@ export default function RotoscopeCanvas({
     if (e.button !== 0) return; // Only left click
     const pt = getNormalizedPoint(e);
 
+    if (selectedTool === 'magic') {
+      triggerMagicMask(pt.x, pt.y);
+      return;
+    }
+
     if (selectedTool === 'eraser') {
       eraseStrokeAt(pt);
       return;
@@ -496,10 +631,8 @@ export default function RotoscopeCanvas({
 
       // 3. Try to select a stroke under the click if we didn't perform a point edit
       const selected = selectStrokeAt(pt);
-      // To prevent frustrating accidental deselections when trying to click near thin lines,
-      // only deselect if we clicked on blank space and did NOT have an active stroke selected before.
-      // This means a selected path remains active and editable until another is clicked or explicitly deselected.
-      if (!selected && !selectedStrokeId) {
+      // Clicking on empty space deselects the active vector mask, matching standard Photopea/Illustrator behaviors
+      if (!selected) {
         onSetSelectedStrokeId(null);
       }
       return;
@@ -652,6 +785,61 @@ export default function RotoscopeCanvas({
         <div id="polygon-help-badge" className="absolute top-4 left-4 bg-[#080808]/95 border border-white/20 px-3 py-1.5 rounded-none text-[10px] text-white/80 font-mono flex items-center gap-2 backdrop-blur-sm pointer-events-none select-none uppercase tracking-wider">
           <Edit2 className="w-3.5 h-3.5" />
           <span>Click original node to CLOSE, or Right-Click to SAVE open path.</span>
+        </div>
+      )}
+
+      {selectedTool === 'magic' && !isMagicMasking && (
+        <div id="magic-help-badge" className="absolute top-4 left-4 bg-[#080808]/95 border border-cyan-500/30 px-3 py-1.5 text-[10px] text-cyan-400 font-mono flex items-center gap-2 backdrop-blur-sm pointer-events-none select-none uppercase tracking-wider shadow-[0_4px_20px_rgba(0,240,255,0.1)]">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+          <span>Click anywhere to isolate/mask that specific object, or click "Isolate Foreground Subject" on the panel.</span>
+        </div>
+      )}
+
+      {/* Magic masking loading overlay */}
+      {isMagicMasking && (
+        <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center z-50 pointer-events-auto">
+          <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6 border border-cyan-500/20 bg-black/90 shadow-[0_0_50px_rgba(0,240,255,0.2)] relative">
+            {/* Corner brackets */}
+            <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
+            <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-cyan-400" />
+            <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-cyan-400" />
+            <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
+
+            <div className="relative">
+              <Sparkles className="w-10 h-10 text-cyan-400 animate-spin" style={{ animationDuration: '3s' }} />
+              <div className="absolute inset-0 w-10 h-10 bg-cyan-400/20 rounded-full blur-md animate-ping" />
+            </div>
+            
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-[0.2em] animate-pulse">
+                MAGIC MASKING ACTIVE
+              </h4>
+              <p className="text-[10px] text-white/80 font-mono tracking-wider leading-relaxed">
+                Gemini is removing background and isolating subject boundary...
+              </p>
+              <div className="w-48 h-1 bg-white/5 overflow-hidden mt-3 mx-auto relative">
+                <div 
+                  className="absolute inset-y-0 bg-cyan-400 w-1/2 animate-pulse"
+                  style={{
+                    background: 'linear-gradient(90deg, transparent, #00f0ff, transparent)',
+                    animation: 'shimmer 1.5s infinite linear'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Magic mask feedback pulsing click ring */}
+      {magicFeedback && (
+        <div 
+          className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-45"
+          style={{ left: `${magicFeedback.x}%`, top: `${magicFeedback.y}%` }}
+        >
+          <div className="w-14 h-14 border-2 border-cyan-400 rounded-full animate-ping" />
+          <div className="absolute inset-0 w-14 h-14 border border-cyan-400/40 rounded-full animate-pulse scale-75" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_12px_#00f0ff]" />
         </div>
       )}
     </div>

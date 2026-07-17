@@ -56,7 +56,7 @@ app.get('/api/health', (req, res) => {
 // AI Auto-Trace Outline generator (uses base64 screenshot of the video frame)
 app.post('/api/auto-trace', async (req, res) => {
   try {
-    const { imageBase64, mimeType = 'image/png' } = req.body;
+    const { imageBase64, mimeType = 'image/png', cognitiveMemory } = req.body;
 
     if (!imageBase64) {
       return res.status(400).json({ error: 'Missing imageBase64 data' });
@@ -75,8 +75,15 @@ app.post('/api/auto-trace', async (req, res) => {
       },
     };
 
+    let targetDensity = 35;
+    let learningBonus = '';
+    if (cognitiveMemory) {
+      targetDensity = cognitiveMemory.densityPreference || 35;
+      learningBonus = ` [COGNITIVE REINFORCEMENT LEARNING]: Based on active training history (User Session Execution Count: ${cognitiveMemory.executionsCount || 1}), the user prefers vectors with about ${targetDensity} coordinates. Align your contour output density tightly with this preference.`;
+    }
+
     const textPart = {
-      text: 'Analyze the primary moving subject, foreground actor, dancer, or main central figure in this video frame. Generate a continuous boundary curve tracing its outer silhouette contour. Output between 25 and 45 sequential vector points that draw this contour smoothly. Ensure coordinates x and y are percentage offsets from 0 to 100.',
+      text: `Analyze the primary moving subject, foreground actor, dancer, or main central figure in this video frame. Generate a continuous boundary curve tracing its outer silhouette contour. Output between 25 and 45 sequential vector points that draw this contour smoothly. Ensure coordinates x and y are percentage offsets from 0 to 100.${learningBonus}`,
     };
 
     const response = await ai.models.generateContent({
@@ -117,6 +124,85 @@ app.post('/api/auto-trace', async (req, res) => {
     console.error('AI Auto-Trace Error:', error.message || error);
     return res.status(500).json({
       error: 'Failed to generate AI auto-trace.',
+      message: error.message || 'Unknown backend error',
+    });
+  }
+});
+
+// AI Magic Mask / Background Removing Mask generator
+app.post('/api/magic-mask', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/png', clickX, clickY, mode = 'subject', cognitiveMemory } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Missing imageBase64 data' });
+    }
+
+    // Strip header prefix if present (e.g. "data:image/png;base64,")
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    const ai = getAiClient();
+
+    // Setup input parts
+    const imagePart = {
+      inlineData: {
+        mimeType,
+        data: cleanBase64,
+      },
+    };
+
+    let targetDensity = 35;
+    let learningBonus = '';
+    if (cognitiveMemory) {
+      targetDensity = cognitiveMemory.densityPreference || 35;
+      learningBonus = ` [COGNITIVE REINFORCEMENT LEARNING]: Based on active training history (User Session Execution Count: ${cognitiveMemory.executionsCount || 1}), the user prefers vectors with about ${targetDensity} coordinates. Align your contour output density tightly with this preference.`;
+    }
+
+    let prompt = '';
+    if (mode === 'subject') {
+      prompt = `Analyze the primary foreground subject, character, or main focal element of interest in this video frame. Generate a high-end vector silhouette/mask outline to separate it from the background (essentially performing a professional green-screen/background-removal cutout). Output between 30 and 45 sequential closed polygon coordinates tracing this boundary perfectly. Ensure coordinates x and y are percentage offsets from 0 to 100.${learningBonus}`;
+    } else {
+      prompt = `The user has clicked specifically at coordinate x=${clickX.toFixed(1)}%, y=${clickY.toFixed(1)}% inside this image. Identify the discrete object, entity, or distinct visual element situated at or enclosing this coordinate. Generate a high-end closed polygon contour tracing its precise shape boundary to separate/mask it from the background and surrounding elements. Output between 30 and 45 sequential points. Ensure coordinates x and y are percentage offsets from 0 to 100.${learningBonus}`;
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: { parts: [imagePart, { text: prompt }] },
+      config: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          description: 'A sequential list of points representing the closed polygon mask contour path.',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              x: {
+                type: Type.NUMBER,
+                description: 'Horizontal coordinate as a percentage from 0 (left) to 100 (right)',
+              },
+              y: {
+                type: Type.NUMBER,
+                description: 'Vertical coordinate as a percentage from 0 (top) to 100 (bottom)',
+              },
+            },
+            required: ['x', 'y'],
+          },
+        },
+      },
+    });
+
+    const textOutput = response.text;
+    if (!textOutput) {
+      throw new Error('Empty response from AI Magic Mask generator');
+    }
+
+    const points = JSON.parse(textOutput.trim());
+    return res.json({ points });
+  } catch (error: any) {
+    console.error('AI Magic Mask Error:', error.message || error);
+    return res.status(500).json({
+      error: 'Failed to generate Magic Mask cutout.',
       message: error.message || 'Unknown backend error',
     });
   }

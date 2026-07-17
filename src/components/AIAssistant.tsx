@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Stroke, FrameData } from '../types';
+import { Stroke, FrameData, CognitiveMemory } from '../types';
 import { extractContoursFromSource } from '../utils/edgeDetector';
 import { Sparkles, Brain, Code, AlertTriangle, Cpu, HelpCircle, Terminal } from 'lucide-react';
 
@@ -16,6 +16,7 @@ interface AIAssistantProps {
   selectedColor: string;
   selectedWidth: number;
   selectedStyle: Stroke['style'];
+  cognitiveMemory?: CognitiveMemory;
 }
 
 export default function AIAssistant({
@@ -26,6 +27,7 @@ export default function AIAssistant({
   selectedColor,
   selectedWidth,
   selectedStyle,
+  cognitiveMemory,
 }: AIAssistantProps) {
   const [logs, setLogs] = useState<string[]>([
     'SYSTEM: Roto3D Assistant Core initialized.',
@@ -85,7 +87,7 @@ export default function AIAssistant({
       const response = await fetch('/api/auto-trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: frameImg }),
+        body: JSON.stringify({ imageBase64: frameImg, cognitiveMemory }),
       });
 
       if (!response.ok) {
@@ -251,6 +253,58 @@ export default function AIAssistant({
               {adviceText}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Dynamic Learning weight metrics */}
+      {cognitiveMemory && (
+        <div id="ai-learning-metrics-widget" className="p-3 bg-cyan-950/20 border border-cyan-500/20 rounded-none text-left flex flex-col gap-2 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-cyan-400/5 to-transparent pointer-events-none rounded-full blur-md group-hover:scale-125 transition-transform" />
+          
+          <div className="flex items-center justify-between border-b border-cyan-500/15 pb-1 flex-wrap gap-1">
+            <span className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-cyan-400 flex items-center gap-1.5">
+              <Brain className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              Adaptive Neural Weights
+            </span>
+            <span className="text-[7px] font-mono bg-cyan-500/10 text-cyan-400 px-1 py-0.5 border border-cyan-500/20 uppercase font-bold tracking-wider animate-pulse">
+              Self-Learning Active
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 font-mono text-[9px] text-white/50">
+            <div className="flex flex-col gap-0.5">
+              <span className="uppercase tracking-widest text-white/30 text-[7px]">Executions</span>
+              <span className="text-white font-bold text-[11px]">{cognitiveMemory.executionsCount} trials</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="uppercase tracking-widest text-white/30 text-[7px]">Confidence Weight</span>
+              <span className="text-cyan-400 font-bold text-[11px]">{(cognitiveMemory.precisionWeight * 100).toFixed(0)}%</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="uppercase tracking-widest text-white/30 text-[7px]">Avg Density</span>
+              <span className="text-white font-bold text-[11px]">{cognitiveMemory.averagePointCount} points</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="uppercase tracking-widest text-white/30 text-[7px]">Style Match</span>
+              <span className="text-pink-400 font-bold uppercase text-[10px]">{cognitiveMemory.styleAffinity}</span>
+            </div>
+          </div>
+
+          <div className="text-[9px] bg-black/40 border border-white/5 p-1 flex flex-col gap-0.5">
+            <span className="text-white/40 uppercase tracking-[0.1em] text-[7px]">Last Logged Telemetry:</span>
+            <span className="text-white/80 font-mono italic truncate">"{cognitiveMemory.lastAction}"</span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[7px] uppercase text-white/30 tracking-widest">Learned System Heuristics:</span>
+            <div className="flex flex-wrap gap-1 max-h-[44px] overflow-y-auto scrollbar-thin">
+              {cognitiveMemory.rulesLearned.slice(-3).map((rule, idx) => (
+                <span key={idx} className="bg-white/5 border border-white/10 text-white/70 text-[8px] px-1 py-0.5 rounded-none font-mono">
+                  ✓ {rule}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

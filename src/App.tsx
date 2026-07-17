@@ -4,12 +4,14 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FrameData, Stroke, VideoSample } from './types';
+import { FrameData, Stroke, VideoSample, CognitiveMemory } from './types';
 import RotoscopeCanvas from './components/RotoscopeCanvas';
 import Viewport3D from './components/Viewport3D';
 import ControlPanel from './components/ControlPanel';
 import AIAssistant from './components/AIAssistant';
 import { interpolateTimeline, EasingType } from './utils/interpolation';
+// @ts-ignore
+import gifshot from 'gifshot';
 import {
   Video,
   Upload,
@@ -60,6 +62,7 @@ export default function App() {
   const [videoUrl, setVideoUrl] = useState<string>(PRESET_SAMPLES[0].url);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cancelExportRef = useRef(false);
 
   // Frame sequencer data states
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
@@ -76,13 +79,88 @@ export default function App() {
   const [selectedColor, setSelectedColor] = useState('#00f0ff');
   const [selectedWidth, setSelectedWidth] = useState(2.5);
   const [selectedStyle, setSelectedStyle] = useState<Stroke['style']>('neon');
-  const [selectedTool, setSelectedTool] = useState<'brush' | 'line' | 'polygon' | 'eraser' | 'point'>('brush');
+  const [selectedTool, setSelectedTool] = useState<'brush' | 'line' | 'polygon' | 'eraser' | 'point' | 'magic'>('brush');
+
+  // AI Cognitive Mind / Self-Learning Memory Engine (retains across refreshes)
+  const [cognitiveMemory, setCognitiveMemory] = useState<CognitiveMemory>(() => {
+    try {
+      const saved = localStorage.getItem('cognitive_rotoscope_memory');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      executionsCount: 0,
+      lastAction: 'Neural link established',
+      averagePointCount: 30,
+      colorAffinity: '#00f0ff',
+      styleAffinity: 'neon',
+      precisionWeight: 0.5,
+      densityPreference: 35,
+      rulesLearned: [
+        'Initialize vector anchor optimization',
+        'Learn spatial 3D time depth projection',
+      ],
+    };
+  });
+
+  const registerExecution = (actionName: string, meta?: { pointsCount?: number; color?: string; style?: string }) => {
+    setCognitiveMemory((prev) => {
+      const newCount = prev.executionsCount + 1;
+      let newRules = [...prev.rulesLearned];
+      
+      if (newCount === 1) {
+        newRules.push('Learn click-to-isolate mask logic');
+      }
+      if (newCount === 3) {
+        newRules.push('Calibrate professional boundary density ratios');
+      }
+      if (newCount === 5) {
+        newRules.push('Maximize edge contour vector precision');
+      }
+      if (newCount === 8) {
+        newRules.push('Activate custom 3D mesh time depth alignment');
+      }
+      if (actionName.toLowerCase().includes('magic') || actionName.toLowerCase().includes('ai')) {
+        if (!newRules.includes('Optimize AI semantic background isolation')) {
+          newRules.push('Optimize AI semantic background isolation');
+        }
+      }
+      if (actionName.toLowerCase().includes('drag') || actionName.toLowerCase().includes('point') || actionName.toLowerCase().includes('modif')) {
+        if (!newRules.includes('Refine manual point correction alignment')) {
+          newRules.push('Refine manual point correction alignment');
+        }
+      }
+
+      const nextColor = meta?.color || prev.colorAffinity;
+      const nextStyle = meta?.style || prev.styleAffinity;
+      
+      let nextAvgPoints = prev.averagePointCount;
+      if (meta?.pointsCount) {
+        nextAvgPoints = Math.round((prev.averagePointCount * 4 + meta.pointsCount) / 5);
+      }
+
+      const nextPrecision = Math.min(0.99, parseFloat((0.5 + (newCount * 0.02)).toFixed(2)));
+
+      const updated = {
+        executionsCount: newCount,
+        lastAction: actionName,
+        averagePointCount: nextAvgPoints,
+        colorAffinity: nextColor,
+        styleAffinity: nextStyle,
+        precisionWeight: nextPrecision,
+        densityPreference: nextAvgPoints,
+        rulesLearned: Array.from(new Set(newRules)),
+      };
+
+      localStorage.setItem('cognitive_rotoscope_memory', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Point editing states
   const [selectedStrokeId, setSelectedStrokeId] = useState<string | null>(null);
   const [pointEditMode, setPointEditMode] = useState<'add' | 'remove'>('add');
 
-  const handleSetSelectedTool = (tool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point') => {
+  const handleSetSelectedTool = (tool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point' | 'magic') => {
     setSelectedTool(tool);
     if (tool !== 'point') {
       setSelectedStrokeId(null);
@@ -109,6 +187,7 @@ export default function App() {
 
     setFrames(previous);
     triggerToast('Undo successful');
+    registerExecution('Reverted Action (Undo)');
   };
 
   const handleRedo = () => {
@@ -121,6 +200,7 @@ export default function App() {
 
     setFrames(next);
     triggerToast('Redo successful');
+    registerExecution('Re-applied Action (Redo)');
   };
 
   // Onion skin options
@@ -131,6 +211,12 @@ export default function App() {
   const [zSpacing, setZSpacing] = useState(35);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Exporting MP4/GIF states
+  const [exportStatus, setExportStatus] = useState<'idle' | 'rendering' | 'compiling' | 'success' | 'error'>('idle');
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportTargetFormat, setExportTargetFormat] = useState<'mp4' | 'gif' | null>(null);
 
   // Synchronize playing states with HTML5 Video Element
   useEffect(() => {
@@ -145,6 +231,17 @@ export default function App() {
       video.pause();
     }
   }, [isPlaying]);
+
+  // Clean stale selection on frame change: make sure point editing remains focused on active frame
+  useEffect(() => {
+    if (selectedStrokeId) {
+      const currentStrokes = frames.find((f) => f.frameIndex === currentFrameIndex)?.strokes || [];
+      const exists = currentStrokes.some((s) => s.id === selectedStrokeId);
+      if (!exists) {
+        setSelectedStrokeId(null);
+      }
+    }
+  }, [currentFrameIndex]);
 
   // Video time tracking sync (converts currentTime to frame index)
   const handleTimeUpdate = () => {
@@ -183,6 +280,29 @@ export default function App() {
     setFrames((prev) =>
       prev.map((f) => (f.frameIndex === currentFrameIndex ? { ...f, strokes } : f))
     );
+
+    // Register learning execution if strokes changed
+    const currentFrame = frames.find((f) => f.frameIndex === currentFrameIndex);
+    const prevStrokes = currentFrame ? currentFrame.strokes : [];
+    if (strokes.length > prevStrokes.length) {
+      const added = strokes[strokes.length - 1];
+      const isAi = added.id.startsWith('ai-trace') || added.id.startsWith('magic-mask');
+      const actionLabel = isAi 
+        ? `Isolated vector contour with AI (${added.points.length} pts)` 
+        : `Plotted manual keyframe path (${added.points.length} pts)`;
+      registerExecution(actionLabel, {
+        pointsCount: added.points.length,
+        color: added.color,
+        style: added.style,
+      });
+    } else if (strokes.length < prevStrokes.length) {
+      registerExecution('Deleted/erased target mask vector');
+    } else {
+      registerExecution('Fine-tuned/dragged vertex points on mask', {
+        color: selectedColor,
+        style: selectedStyle,
+      });
+    }
   };
 
   const handleClearCurrentFrame = () => {
@@ -190,7 +310,18 @@ export default function App() {
     setFrames((prev) =>
       prev.map((f) => (f.frameIndex === currentFrameIndex ? { ...f, strokes: [] } : f))
     );
-    triggerToast('Frame strokes cleared');
+    triggerToast('Current frame mask reset');
+    registerExecution('Reset Current Frame Mask');
+  };
+
+  const handleResetAllMasks = () => {
+    pushToUndo(frames);
+    setFrames((prev) =>
+      prev.map((f) => ({ ...f, strokes: [] }))
+    );
+    setSelectedStrokeId(null);
+    triggerToast('All keyframe masks reset');
+    registerExecution('Cleared all timeline masks');
   };
 
   const handleTrackMask = (direction: 'forward' | 'backward' | 'both') => {
@@ -202,30 +333,52 @@ export default function App() {
 
     pushToUndo(frames);
 
-    const cloneStrokes = () => JSON.parse(JSON.stringify(currentStrokes)).map((stroke: Stroke) => ({
-      ...stroke,
-      id: `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
-    }));
+    let nextSelectedId: string | null = null;
+    let prevSelectedId: string | null = null;
+
+    const cloneStrokes = (targetDirection: 'forward' | 'backward') => {
+      return JSON.parse(JSON.stringify(currentStrokes)).map((stroke: Stroke) => {
+        const newId = `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        if (stroke.id === selectedStrokeId) {
+          if (targetDirection === 'forward') nextSelectedId = newId;
+          if (targetDirection === 'backward') prevSelectedId = newId;
+        }
+        return {
+          ...stroke,
+          id: newId
+        };
+      });
+    };
 
     setFrames((prev) => {
       return prev.map((f) => {
         if (direction === 'forward' && f.frameIndex === currentFrameIndex + 1) {
-          return { ...f, strokes: cloneStrokes() };
+          return { ...f, strokes: cloneStrokes('forward') };
         }
         if (direction === 'backward' && f.frameIndex === currentFrameIndex - 1) {
-          return { ...f, strokes: cloneStrokes() };
+          return { ...f, strokes: cloneStrokes('backward') };
         }
-        if (direction === 'both' && (f.frameIndex === currentFrameIndex - 1 || f.frameIndex === currentFrameIndex + 1)) {
-          return { ...f, strokes: cloneStrokes() };
+        if (direction === 'both') {
+          if (f.frameIndex === currentFrameIndex + 1) {
+            return { ...f, strokes: cloneStrokes('forward') };
+          }
+          if (f.frameIndex === currentFrameIndex - 1) {
+            return { ...f, strokes: cloneStrokes('backward') };
+          }
         }
         return f;
       });
     });
 
+    registerExecution(`Tracked/interpolated mask ${direction} in timeline`);
+
     if (direction === 'forward') {
       const nextFrameIndex = currentFrameIndex + 1;
       if (nextFrameIndex < TOTAL_FRAMES) {
         handleSetFrameIndex(nextFrameIndex);
+        if (nextSelectedId) {
+          setSelectedStrokeId(nextSelectedId);
+        }
         triggerToast('Mask tracked forward & advanced to next frame');
       } else {
         triggerToast('Mask tracked forward (already at last frame)');
@@ -234,6 +387,9 @@ export default function App() {
       const prevFrameIndex = currentFrameIndex - 1;
       if (prevFrameIndex >= 0) {
         handleSetFrameIndex(prevFrameIndex);
+        if (prevSelectedId) {
+          setSelectedStrokeId(prevSelectedId);
+        }
         triggerToast('Mask tracked backward & moved to previous frame');
       } else {
         triggerToast('Mask tracked backward (already at first frame)');
@@ -333,6 +489,297 @@ export default function App() {
     triggerToast('Vector sequence exported');
   };
 
+  const drawStrokeOnExport = (
+    ctx: CanvasRenderingContext2D,
+    stroke: Stroke,
+    width: number,
+    height: number,
+    opacity: number = 1.0
+  ) => {
+    if (stroke.points.length === 0) return;
+
+    const toPx = (p: { x: number; y: number }) => ({
+      x: (p.x / 100) * width,
+      y: (p.y / 100) * height,
+    });
+
+    ctx.save();
+    ctx.beginPath();
+
+    const start = toPx(stroke.points[0]);
+    ctx.moveTo(start.x, start.y);
+
+    for (let i = 1; i < stroke.points.length; i++) {
+      const pt = toPx(stroke.points[i]);
+      ctx.lineTo(pt.x, pt.y);
+    }
+
+    if (stroke.isClosed) {
+      ctx.closePath();
+    }
+
+    const strokeColor = stroke.color;
+    const glowColor = stroke.glowColor;
+
+    ctx.lineWidth = stroke.width * (width / 640);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (stroke.style === 'dotted') {
+      ctx.setLineDash([1, ctx.lineWidth * 2]);
+    } else if (stroke.style === 'dashed') {
+      ctx.setLineDash([12 * (width / 640), 6 * (width / 640)]);
+    } else if (stroke.style === 'pulse') {
+      ctx.lineWidth = stroke.width * 1.15 * (width / 640);
+    }
+
+    if (stroke.isClosed) {
+      ctx.save();
+      ctx.fillStyle = strokeColor;
+      ctx.globalAlpha = opacity * 0.28;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.strokeStyle = strokeColor;
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = stroke.glowWidth * (width / 640);
+    ctx.globalAlpha = opacity;
+
+    ctx.stroke();
+
+    if (stroke.style === 'neon' || stroke.style === 'laser' || stroke.style === 'pulse') {
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1, stroke.width * 0.3 * (width / 640));
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  };
+
+  const handleExportFormat = async (format: 'mp4' | 'gif') => {
+    cancelExportRef.current = false;
+    const video = videoRef.current;
+    
+    // 1. Initial State
+    setExportStatus('rendering');
+    setExportTargetFormat(format);
+    setExportProgress(0);
+    setExportMessage('Initializing Roto3D Cybernetic Render Engine...');
+    setIsPlaying(false);
+
+    // 2. Prepare canvas
+    const exportCanvas = document.createElement('canvas');
+    const exportWidth = video && video.videoWidth ? video.videoWidth : 1280;
+    const exportHeight = video && video.videoHeight ? video.videoHeight : 720;
+    exportCanvas.width = exportWidth;
+    exportCanvas.height = exportHeight;
+    const ctx = exportCanvas.getContext('2d');
+    if (!ctx) {
+      setExportStatus('error');
+      setExportMessage('Failed to initialize 2D render context.');
+      return;
+    }
+
+    // 3. Prepare MediaRecorder if MP4
+    let mediaRecorder: MediaRecorder | null = null;
+    let recordedChunks: Blob[] = [];
+    let mimeType = 'video/mp4';
+
+    if (format === 'mp4') {
+      const stream = exportCanvas.captureStream(10); // Capture stream at 10fps
+      
+      // Determine support
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp9';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+      }
+
+      try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+        mediaRecorder.start();
+      } catch (err: any) {
+        setExportStatus('error');
+        setExportMessage(`MediaRecorder initialization failed: ${err?.message || err}`);
+        return;
+      }
+    }
+
+    // 4. Determine delay per frame
+    const duration = video ? video.duration : 4;
+    const frameDelayMs = (duration / TOTAL_FRAMES) * 1000;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const frameImages: string[] = [];
+
+    // 5. Render Loop
+    try {
+      for (let fIdx = 0; fIdx < TOTAL_FRAMES; fIdx++) {
+        if (cancelExportRef.current) {
+          throw new Error('Export cancelled by user.');
+        }
+
+        setExportProgress(Math.round((fIdx / TOTAL_FRAMES) * 90));
+        setExportMessage(`Rendering Frame ${fIdx + 1} of ${TOTAL_FRAMES}...`);
+        
+        // Sync frame preview in main UI
+        setCurrentFrameIndex(fIdx);
+
+        // Seek video
+        if (video) {
+          const frameTime = (fIdx / TOTAL_FRAMES) * video.duration;
+          video.currentTime = frameTime;
+          
+          await new Promise<void>((resolve) => {
+            const onSeeked = () => {
+              video.removeEventListener('seeked', onSeeked);
+              resolve();
+            };
+            video.addEventListener('seeked', onSeeked);
+            setTimeout(() => {
+              video.removeEventListener('seeked', onSeeked);
+              resolve();
+            }, 300); // 300ms max seek wait
+          });
+        }
+
+        // Draw Frame
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, exportWidth, exportHeight);
+
+        if (video) {
+          try {
+            ctx.drawImage(video, 0, 0, exportWidth, exportHeight);
+          } catch (e) {
+            console.warn("Failed to draw video frame during render", e);
+          }
+        }
+
+        // Draw Strokes for this frame
+        const currentFrame = frames[fIdx];
+        if (currentFrame && currentFrame.strokes) {
+          currentFrame.strokes.forEach((stroke) => {
+            drawStrokeOnExport(ctx, stroke, exportWidth, exportHeight);
+          });
+        }
+
+        // Add some premium Roto3D Cybernetic overlay metadata/HUD
+        ctx.save();
+        ctx.font = 'bold 16px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.9)';
+        ctx.fillText(`ROTO3D DIGITAL RENDER ENGINE // FRAME ${String(fIdx + 1).padStart(2, '0')}`, 24, 40);
+        ctx.font = '11px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.fillText(`SEQUENCE KEY: ROTO3D_CYBER_SEQ | TIMECODE: ${(fIdx * (video ? video.duration : 4) / TOTAL_FRAMES).toFixed(2)}s / ${duration.toFixed(2)}s`, 24, 60);
+        
+        // Add watermarks/aesthetic branding
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.font = 'bold 10px "Inter", sans-serif';
+        ctx.fillText('POWERED BY ROTO3D STUDIO // SELF-LEARNING AI ACTIVE', 24, exportHeight - 24);
+        ctx.restore();
+
+        // Save frame for GIF
+        if (format === 'gif') {
+          const frameDataUrl = exportCanvas.toDataURL('image/jpeg', 0.82); // 82% quality JPEG is perfect
+          frameImages.push(frameDataUrl);
+        }
+
+        // Delay so MediaRecorder captures with proper clock intervals
+        await delay(frameDelayMs);
+      }
+
+      // Add one more delay tick for the final frame
+      await delay(frameDelayMs);
+
+      // Check cancellation again
+      if (cancelExportRef.current) {
+        throw new Error('Export cancelled by user.');
+      }
+
+      setExportStatus('compiling');
+      setExportProgress(95);
+
+      if (format === 'mp4' && mediaRecorder) {
+        setExportMessage('Compiling final MP4/WebM video stream container...');
+        mediaRecorder.stop();
+        
+        await new Promise<void>((resolve) => {
+          mediaRecorder!.onstop = () => {
+            resolve();
+          };
+        });
+
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        a.download = `roto3d-render-sequence-${Date.now()}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        setExportProgress(100);
+        setExportStatus('success');
+        setExportMessage(`Successfully exported animation sequence as ${ext.toUpperCase()} video file!`);
+        registerExecution(`Rendered entire timeline as high-precision ${ext.toUpperCase()} video`);
+      } else {
+        setExportMessage('Synthesizing frames into optimized looping GIF...');
+        
+        gifshot.createGIF({
+          images: frameImages,
+          gifWidth: exportWidth > 640 ? 640 : exportWidth,
+          gifHeight: exportHeight > 360 ? 360 : exportHeight,
+          interval: frameDelayMs / 1000,
+          numFrames: TOTAL_FRAMES,
+        }, (obj) => {
+          if (cancelExportRef.current) {
+            setExportStatus('idle');
+            return;
+          }
+          if (!obj.error) {
+            const url = obj.image;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `roto3d-render-sequence-${Date.now()}.gif`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setExportProgress(100);
+            setExportStatus('success');
+            setExportMessage('Successfully compiled and downloaded animated GIF!');
+            registerExecution('Synthesized and exported looping animated GIF');
+          } else {
+            setExportStatus('error');
+            setExportMessage(`GIF compilation failed: ${obj.errorMsg}`);
+          }
+        });
+      }
+
+    } catch (err: any) {
+      if (err?.message === 'Export cancelled by user.') {
+        setExportStatus('idle');
+        triggerToast('Export cancelled');
+      } else {
+        setExportStatus('error');
+        setExportMessage(`Export failed: ${err?.message || err}`);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#080808] text-white font-sans flex flex-col relative overflow-x-hidden antialiased select-none">
       
@@ -341,6 +788,100 @@ export default function App() {
         <div id="global-toast-hud" className="fixed top-6 left-1/2 -translate-x-1/2 bg-white text-black font-mono text-[10px] uppercase tracking-widest px-6 py-3 border border-black shadow-2xl z-50 flex items-center gap-2 transition-all">
           <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-ping" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* DIGITAL RENDER ENGINE EXPORT MODAL */}
+      {exportStatus !== 'idle' && (
+        <div id="render-export-overlay" className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none">
+          <div className="w-full max-w-lg bg-[#0c0c0c] border border-white/10 p-6 flex flex-col gap-6 text-left shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 via-pink-500 to-indigo-500" />
+            
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-none border border-cyan-500/20 bg-cyan-950/20 flex items-center justify-center">
+                  <Activity className="w-4 h-4 text-cyan-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-xs uppercase font-extrabold tracking-[0.2em] text-white">
+                    Roto3D Digital Render Engine
+                  </h3>
+                  <p className="text-[9px] font-mono uppercase tracking-widest text-white/40 mt-0.5">
+                    Target Format: {exportTargetFormat?.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[9px] font-mono bg-cyan-500/10 text-cyan-400 px-2 py-0.5 border border-cyan-500/20 uppercase font-bold tracking-widest animate-pulse">
+                {exportStatus}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {/* Progress bar and percentages */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center text-[10px] font-mono">
+                  <span className="text-white/60">{exportMessage}</span>
+                  <span className="text-white font-bold">{exportProgress}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/5 border border-white/10 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-cyan-400 to-indigo-500 transition-all duration-300"
+                    style={{ width: `${exportProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Technical Telemetry Details */}
+              <div className="bg-black border border-white/5 p-4 font-mono text-[9px] text-white/50 flex flex-col gap-1.5">
+                <div className="flex justify-between">
+                  <span className="uppercase text-white/30">Frame Dimension</span>
+                  <span className="text-white font-semibold">
+                    {videoRef.current?.videoWidth || 1280} x {videoRef.current?.videoHeight || 720} px
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-white/5 pt-1.5">
+                  <span className="uppercase text-white/30">Target Rate</span>
+                  <span className="text-white font-semibold">
+                    {(TOTAL_FRAMES / (videoRef.current ? videoRef.current.duration : 4)).toFixed(1)} FPS
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-white/5 pt-1.5">
+                  <span className="uppercase text-white/30">Drawn Paths</span>
+                  <span className="text-white font-semibold">
+                    {frames.reduce((acc, f) => acc + f.strokes.length, 0)} total vector paths
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-white/5 pt-4">
+              {exportStatus === 'success' ? (
+                <button
+                  onClick={() => setExportStatus('idle')}
+                  className="bg-white hover:bg-white/90 text-black border border-white text-[10px] font-mono font-bold tracking-widest px-6 py-2.5 uppercase transition cursor-pointer"
+                >
+                  Dismiss Render
+                </button>
+              ) : exportStatus === 'error' ? (
+                <button
+                  onClick={() => setExportStatus('idle')}
+                  className="bg-red-600 hover:bg-red-500 text-white text-[10px] font-mono font-bold tracking-widest px-6 py-2.5 uppercase transition cursor-pointer"
+                >
+                  Close & Retry
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    cancelExportRef.current = true;
+                    setExportStatus('idle');
+                  }}
+                  className="border border-white/20 hover:border-white/40 hover:bg-white/5 text-white/70 hover:text-white text-[10px] font-mono font-bold tracking-widest px-6 py-2.5 uppercase transition cursor-pointer"
+                >
+                  Cancel Render
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -406,15 +947,15 @@ export default function App() {
           </div>
 
           {/* ACTIVE WORKSPACE CELL */}
-          <div className="flex-1 min-h-[440px] bg-[#111111] border border-white/10 rounded-none relative overflow-hidden flex items-center justify-center p-4 group shadow-2xl">
+          <div className="flex-1 min-h-[400px] sm:min-h-[440px] bg-[#111111] border border-white/10 rounded-none relative overflow-hidden flex items-center justify-center p-2 sm:p-3 group shadow-2xl">
             
             {/* Viewport Frame Background GRID Accent */}
             <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
 
             {/* TAB 1: 2D drawing canvas layered over active looping video */}
             {activeTab === 'drawing' ? (
-              <div className="flex flex-col items-center gap-3 w-full">
-                <div id="video-canvas-stage-wrapper" className="relative w-[90%] aspect-video rounded-none overflow-hidden bg-black border border-white/15 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2.5 w-full">
+                <div id="video-canvas-stage-wrapper" className="relative w-full sm:w-[98%] aspect-video rounded-none overflow-hidden bg-black border border-white/15 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex items-center justify-center">
                   
                   {/* Embedded HTML5 Core Player */}
                   <video
@@ -445,6 +986,7 @@ export default function App() {
                     selectedStrokeId={selectedStrokeId}
                     onSetSelectedStrokeId={setSelectedStrokeId}
                     pointEditMode={pointEditMode}
+                    cognitiveMemory={cognitiveMemory}
                   />
 
                   {/* 2D Mode overlay label HUD */}
@@ -476,7 +1018,7 @@ export default function App() {
             )}
 
             {/* EDITORIAL MASSIVE WATERMARK OVERLAY */}
-            <div className="absolute bottom-6 left-6 text-left pointer-events-none select-none z-10 opacity-80">
+            <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 text-left pointer-events-none select-none z-10 opacity-80">
               <div className="text-[10px] font-mono uppercase tracking-[0.4em] text-white/40">Current Track</div>
               <h1 className="editorial-massive-text">MOTION<br />TRACK</h1>
               <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-white/40 mt-1">
@@ -677,7 +1219,9 @@ export default function App() {
             zSpacing={zSpacing}
             onSetZSpacing={setZSpacing}
             onClearFrame={handleClearCurrentFrame}
+            onResetAllMasks={handleResetAllMasks}
             onExportAnimation={handleExportAnimation}
+            onExportFormat={handleExportFormat}
             onUndo={handleUndo}
             onRedo={handleRedo}
             canUndo={undoStack.length > 0}
@@ -699,6 +1243,7 @@ export default function App() {
             selectedColor={selectedColor}
             selectedWidth={selectedWidth}
             selectedStyle={selectedStyle}
+            cognitiveMemory={cognitiveMemory}
           />
         </div>
       </main>

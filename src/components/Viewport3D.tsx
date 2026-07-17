@@ -335,6 +335,16 @@ export default function Viewport3D({
             ctx.shadowBlur = stroke.glowWidth * depthScale;
             ctx.globalAlpha = relativeFade;
 
+            // Faint 3D stencil fill for closed masks, mirroring the Photopea look in depth planes
+            if (stroke.isClosed) {
+              ctx.save();
+              ctx.fillStyle = stroke.color;
+              ctx.globalAlpha = relativeFade * 0.12; // extra faint fill in 3D depth planes
+              ctx.shadowBlur = 0;
+              ctx.fill();
+              ctx.restore();
+            }
+
             ctx.stroke();
 
             // Render glowing core line

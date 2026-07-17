@@ -28,6 +28,8 @@ import {
   Brush,
   Slash,
   Pentagon,
+  Film,
+  Video,
 } from 'lucide-react';
 
 interface ControlPanelProps {
@@ -45,8 +47,8 @@ interface ControlPanelProps {
   onSetSelectedWidth: (width: number) => void;
   selectedStyle: Stroke['style'];
   onSetSelectedStyle: (style: Stroke['style']) => void;
-  selectedTool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point';
-  onSetSelectedTool: (tool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point') => void;
+  selectedTool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point' | 'magic';
+  onSetSelectedTool: (tool: 'brush' | 'line' | 'polygon' | 'eraser' | 'point' | 'magic') => void;
 
   showOnionSkin: boolean;
   onSetShowOnionSkin: (show: boolean) => void;
@@ -57,7 +59,9 @@ interface ControlPanelProps {
   onSetZSpacing: (spacing: number) => void;
 
   onClearFrame: () => void;
+  onResetAllMasks: () => void;
   onExportAnimation: () => void;
+  onExportFormat?: (format: 'mp4' | 'gif') => void;
 
   // Point editing and history
   onUndo: () => void;
@@ -104,7 +108,9 @@ export default function ControlPanel({
   zSpacing,
   onSetZSpacing,
   onClearFrame,
+  onResetAllMasks,
   onExportAnimation,
+  onExportFormat,
   onUndo,
   onRedo,
   canUndo,
@@ -419,6 +425,30 @@ export default function ControlPanel({
           </div>
         </div>
 
+        {/* AI MAGIC MASK DIVISION */}
+        <div className="flex flex-col gap-1.5 text-left mt-0.5">
+          <span className="text-[9px] font-mono uppercase tracking-[0.1em] text-white/30">
+            AI Magic Cutout
+          </span>
+          <button
+            onClick={() => onSetSelectedTool('magic')}
+            className={`w-full py-3 px-3 border text-[10px] font-mono font-bold uppercase tracking-widest transition-all flex items-center gap-2.5 justify-center relative overflow-hidden group ${
+              selectedTool === 'magic'
+                ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-black border-cyan-400 font-extrabold shadow-[0_0_15px_rgba(34,211,238,0.3)]'
+                : 'bg-[#111111] border-white/10 text-white/60 hover:text-white hover:border-white/20'
+            }`}
+            title="MAGIC MASK Tool: Isolate subject (background removing) or click-to-mask any custom object with AI"
+          >
+            <Sparkles className={`w-4 h-4 ${selectedTool === 'magic' ? 'text-black' : 'text-cyan-400 group-hover:animate-spin'}`} />
+            <span>MAGIC MASK</span>
+            {selectedTool === 'magic' && (
+              <span className="absolute top-0 right-0 bg-black text-white text-[7px] font-mono font-bold px-1.5 py-0.5 uppercase tracking-wide">
+                ACTIVE
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* Sub-configurator for Point Mask Tool (REMOVE and ADD) */}
         {selectedTool === 'point' && (
           <div className="p-3 bg-white/5 border border-white/10 mt-0.5 flex flex-col gap-2 text-left">
@@ -465,6 +495,47 @@ export default function ControlPanel({
                 <span>Deselect Active Path</span>
               </button>
             )}
+          </div>
+        )}
+
+        {/* Sub-configurator for MAGIC MASK */}
+        {selectedTool === 'magic' && (
+          <div className="p-4 bg-white/5 border border-white/10 mt-0.5 flex flex-col gap-3 text-left relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-500/5 to-transparent pointer-events-none rounded-full blur-xl" />
+            <span className="text-[8px] font-mono uppercase tracking-[0.15em] text-cyan-400 block border-b border-white/5 pb-1 font-bold">
+              AI Magic Mask Parameters
+            </span>
+            
+            <p className="text-[10px] text-white/70 font-mono leading-relaxed">
+              Isolate any visual subject from its background instantly using generative intelligence.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[8px] font-mono uppercase tracking-[0.1em] text-white/40 font-bold">Auto Cutout (BG Removing)</span>
+              <button
+                onClick={() => {
+                  const event = new CustomEvent('trigger-magic-subject-mask');
+                  window.dispatchEvent(event);
+                }}
+                className="w-full py-2.5 px-3 border border-cyan-500/30 hover:border-cyan-400 bg-cyan-950/20 hover:bg-cyan-950/40 text-cyan-400 hover:text-cyan-300 text-[9px] font-mono font-bold uppercase tracking-widest transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                title="Isolate Subject: Automatically detect and mask the main subject to remove background"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Isolate Foreground Subject</span>
+              </button>
+            </div>
+
+            <div className="h-px bg-white/5 my-1" />
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[8px] font-mono uppercase tracking-[0.1em] text-white/40 font-bold">Interactive Click Mode</span>
+              <div className="flex items-start gap-2 bg-black/40 border border-white/5 p-2">
+                <span className="text-cyan-400 text-xs mt-0.5">💡</span>
+                <p className="text-[9px] text-white/50 font-mono leading-normal">
+                  Click anywhere on the video frame player on the left. The AI will isolate the specific clicked object and generate a closed vector mask boundary!
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -613,37 +684,59 @@ export default function ControlPanel({
 
       <div className="h-px bg-white/5" />
 
-      {/* 4. RESTORE DIVISION */}
-      <div className="flex flex-col gap-2">
+      {/* 4. RESTORE & RESET ACTIONS */}
+      <div className="flex flex-col gap-3">
         <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-white/40 block">
-          Restore Actions
+          Restore & Reset Actions
         </span>
-        <div className="grid grid-cols-3 gap-1.5">
+        
+        {/* Undo/Redo Action Row */}
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={onUndo}
             disabled={!canUndo}
-            className="py-2 px-1 border border-white/10 bg-black hover:bg-white/5 hover:border-white/30 text-white text-[9px] font-mono font-bold uppercase tracking-wide transition disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+            className="py-2.5 px-2 border border-white/10 bg-[#111111]/70 hover:bg-white/5 hover:border-white/30 text-white text-[10px] font-mono font-bold uppercase tracking-wider transition disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 active:scale-[0.98]"
             title="Undo last action"
           >
-            <Undo2 className="w-3 h-3" />
+            <Undo2 className="w-3.5 h-3.5 text-cyan-400" />
             <span>Undo</span>
           </button>
+          
           <button
             onClick={onRedo}
             disabled={!canRedo}
-            className="py-2 px-1 border border-white/10 bg-black hover:bg-white/5 hover:border-white/30 text-white text-[9px] font-mono font-bold uppercase tracking-wide transition disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+            className="py-2.5 px-2 border border-white/10 bg-[#111111]/70 hover:bg-white/5 hover:border-white/30 text-white text-[10px] font-mono font-bold uppercase tracking-wider transition disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 active:scale-[0.98]"
             title="Redo undone action"
           >
-            <Redo2 className="w-3 h-3" />
+            <Redo2 className="w-3.5 h-3.5 text-cyan-400" />
             <span>Redo</span>
           </button>
+        </div>
+
+        {/* Reset Mask Action Buttons */}
+        <div className="flex flex-col gap-1.5">
+          {/* Reset Frame Mask Button */}
           <button
             onClick={onClearFrame}
-            className="py-2 px-1 border border-red-500/20 hover:border-red-500/50 bg-red-950/15 hover:bg-red-950/25 text-red-400 text-[9px] font-mono font-bold uppercase tracking-wide transition flex items-center justify-center gap-1"
-            title="Restore Frame: Clears and resets all active strokes"
+            className="w-full py-2.5 px-3 border border-red-500/25 hover:border-red-500/50 bg-red-950/15 hover:bg-red-950/30 text-red-400 text-[10px] font-mono font-bold uppercase tracking-widest transition flex items-center justify-center gap-2 active:scale-[0.98]"
+            title="Reset Frame Mask: Clears all vector paths from the current frame"
           >
-            <Trash2 className="w-3 h-3" />
-            <span>Restore</span>
+            <Trash2 className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+            <span>Reset Current Frame Mask</span>
+          </button>
+
+          {/* Reset All Frames Mask Button */}
+          <button
+            onClick={() => {
+              if (window.confirm("Are you sure you want to reset all masks across the entire timeline? This action can be undone.")) {
+                onResetAllMasks();
+              }
+            }}
+            className="w-full py-2 px-3 border border-red-500/10 hover:border-red-500/25 bg-red-950/5 hover:bg-red-950/15 text-red-400/65 hover:text-red-400 text-[9px] font-mono uppercase tracking-wider transition flex items-center justify-center gap-2 active:scale-[0.98]"
+            title="Reset All Frames: Clears all vector paths from all timeline keyframes"
+          >
+            <Trash2 className="w-3 h-3 text-red-400/50" />
+            <span>Reset All Timeline Masks</span>
           </button>
         </div>
       </div>
@@ -688,6 +781,40 @@ export default function ControlPanel({
                 <span className="text-[8px] text-white/40 mt-0.5">Full multi-frame vector path sequence</span>
               </div>
             </button>
+
+            {/* Option MP4: Video Export */}
+            {onExportFormat && (
+              <button
+                onClick={() => {
+                  onExportFormat('mp4');
+                  setShowExportMenu(false);
+                }}
+                className="px-3 py-2.5 text-left text-[10px] font-mono hover:bg-white/5 text-white/80 hover:text-white transition flex items-center gap-2.5 border-t border-white/5"
+              >
+                <Video className="w-3.5 h-3.5 text-red-400" />
+                <div className="flex flex-col">
+                  <span className="font-bold">Render MP4 Video Sequence</span>
+                  <span className="text-[8px] text-white/40 mt-0.5">Export high-definition MP4 clip with vector glow</span>
+                </div>
+              </button>
+            )}
+
+            {/* Option GIF: Animated GIF Export */}
+            {onExportFormat && (
+              <button
+                onClick={() => {
+                  onExportFormat('gif');
+                  setShowExportMenu(false);
+                }}
+                className="px-3 py-2.5 text-left text-[10px] font-mono hover:bg-white/5 text-white/80 hover:text-white transition flex items-center gap-2.5 border-t border-white/5"
+              >
+                <Film className="w-3.5 h-3.5 text-indigo-400" />
+                <div className="flex flex-col">
+                  <span className="font-bold">Generate Animated GIF</span>
+                  <span className="text-[8px] text-white/40 mt-0.5">Export lightweight looping animated GIF</span>
+                </div>
+              </button>
+            )}
 
             {/* Option B: SVG Current Frame */}
             <button

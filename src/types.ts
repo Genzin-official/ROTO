@@ -35,6 +35,17 @@ export interface VideoSample {
   description: string;
 }
 
+export interface CognitiveMemory {
+  executionsCount: number;
+  lastAction: string;
+  averagePointCount: number;
+  colorAffinity: string;
+  styleAffinity: string;
+  precisionWeight: number; // 0.0 to 1.0
+  densityPreference: number; // point count pref
+  rulesLearned: string[];
+}
+
 export interface Camera3D {
   rotationX: number; // in radians
   rotationY: number; // in radians
@@ -49,3 +60,4 @@ export interface AIAssistantState {
   suggestedPaths: Stroke[];
   confidence: number;
 }
+
