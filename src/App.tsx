@@ -218,6 +218,17 @@ export default function App() {
   const [exportMessage, setExportMessage] = useState('');
   const [exportTargetFormat, setExportTargetFormat] = useState<'mp4' | 'gif' | null>(null);
 
+  // Sync status for branding panel
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'saving'>('synced');
+
+  useEffect(() => {
+    setSyncStatus('saving');
+    const timer = setTimeout(() => {
+      setSyncStatus('synced');
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [frames, cognitiveMemory]);
+
   // Synchronize playing states with HTML5 Video Element
   useEffect(() => {
     const video = videoRef.current;
@@ -912,10 +923,10 @@ export default function App() {
       </header>
 
       {/* MAIN CONTAINER LAYOUT */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+      <main className="flex-1 max-w-7xl mx-auto w-full p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         
         {/* LEFT COLUMN: Stage Display & Preset library (8/12 Columns) */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
+        <div className="lg:col-span-8 flex flex-col gap-4">
           
           {/* TAB SYSTEM CHANGER */}
           <div className="bg-[#0a0a0a] border border-white/10 p-1 flex rounded-none">
@@ -947,66 +958,61 @@ export default function App() {
           </div>
 
           {/* ACTIVE WORKSPACE CELL */}
-          <div className="flex-1 min-h-[400px] sm:min-h-[440px] bg-[#111111] border border-white/10 rounded-none relative overflow-hidden flex items-center justify-center p-2 sm:p-3 group shadow-2xl">
+          <div className="w-full aspect-video bg-[#0c0c0c] border border-white/10 rounded-none relative overflow-hidden flex items-center justify-center p-0 group shadow-2xl">
             
             {/* Viewport Frame Background GRID Accent */}
             <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
 
             {/* TAB 1: 2D drawing canvas layered over active looping video */}
             {activeTab === 'drawing' ? (
-              <div className="flex flex-col items-center gap-2.5 w-full">
-                <div id="video-canvas-stage-wrapper" className="relative w-full sm:w-[98%] aspect-video rounded-none overflow-hidden bg-black border border-white/15 shadow-[0_40px_100px_rgba(0,0,0,0.9)] flex items-center justify-center">
-                  
-                  {/* Embedded HTML5 Core Player */}
-                  <video
-                    ref={videoRef}
-                    src={videoUrl}
-                    onTimeUpdate={handleTimeUpdate}
-                    onEnded={handleVideoEnded}
-                    loop={false}
-                    muted
-                    playsInline
-                    crossOrigin="anonymous"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-contain pointer-events-none"
-                  />
+              <div id="video-canvas-stage-wrapper" className="relative w-full h-full aspect-video rounded-none overflow-hidden bg-black flex items-center justify-center">
+                
+                {/* Embedded HTML5 Core Player */}
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleVideoEnded}
+                  loop={false}
+                  muted
+                  playsInline
+                  crossOrigin="anonymous"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-contain pointer-events-none"
+                />
 
-                  {/* Overlying Interactive SVG Canvas */}
-                  <RotoscopeCanvas
-                    currentFrameIndex={currentFrameIndex}
-                    frames={frames}
-                    onUpdateFrameStrokes={handleUpdateFrameStrokes}
-                    selectedColor={selectedColor}
-                    selectedWidth={selectedWidth}
-                    selectedStyle={selectedStyle}
-                    selectedTool={selectedTool}
-                    videoRef={videoRef}
-                    showOnionSkin={showOnionSkin}
-                    onionSkinRange={onionSkinRange}
-                    selectedStrokeId={selectedStrokeId}
-                    onSetSelectedStrokeId={setSelectedStrokeId}
-                    pointEditMode={pointEditMode}
-                    cognitiveMemory={cognitiveMemory}
-                  />
+                {/* Overlying Interactive SVG Canvas */}
+                <RotoscopeCanvas
+                  currentFrameIndex={currentFrameIndex}
+                  frames={frames}
+                  onUpdateFrameStrokes={handleUpdateFrameStrokes}
+                  selectedColor={selectedColor}
+                  selectedWidth={selectedWidth}
+                  selectedStyle={selectedStyle}
+                  selectedTool={selectedTool}
+                  videoRef={videoRef}
+                  showOnionSkin={showOnionSkin}
+                  onionSkinRange={onionSkinRange}
+                  selectedStrokeId={selectedStrokeId}
+                  onSetSelectedStrokeId={setSelectedStrokeId}
+                  pointEditMode={pointEditMode}
+                  cognitiveMemory={cognitiveMemory}
+                />
 
-                  {/* 2D Mode overlay label HUD */}
-                  <div className="absolute top-4 left-4 bg-[#080808]/90 border border-white/20 px-3 py-1 text-[9px] font-mono text-white select-none pointer-events-none flex items-center gap-1.5 shadow-md">
-                    <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse" />
-                    <span>FRAME 0{currentFrameIndex + 424}</span>
-                  </div>
+                {/* 2D Mode overlay label HUD */}
+                <div className="absolute top-4 left-4 bg-[#080808]/95 border border-white/20 px-3 py-1 text-[9px] font-mono text-white select-none pointer-events-none flex items-center gap-1.5 shadow-md z-20">
+                  <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse" />
+                  <span>FRAME 0{currentFrameIndex + 424}</span>
                 </div>
 
-                {/* Sub-canvas timeline frame number badge */}
-                <div
-                  id="external-frames-indicator"
-                  className="bg-[#080808]/90 border border-white/15 px-4 py-1.5 text-[11px] font-mono text-cyan-400 select-none z-20 tracking-wider shadow-lg flex items-center gap-1.5 font-bold"
-                >
-                  (   Frames [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(TOTAL_FRAMES).padStart(2, '0')}]   )
+                {/* Timeline frame index indicator overlay on top right */}
+                <div className="absolute top-4 right-4 bg-[#080808]/95 border border-white/20 px-3 py-1 text-[9px] font-mono text-cyan-400 select-none pointer-events-none flex items-center gap-1.5 shadow-md font-bold z-20">
+                  <span>FRAME [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(TOTAL_FRAMES).padStart(2, '0')}]</span>
                 </div>
               </div>
             ) : (
               // TAB 2: Dynamic 3D perspective spacetime chamber
-              <div id="spacetime-3d-stage-wrapper" className="w-full h-full min-h-[420px]">
+              <div id="spacetime-3d-stage-wrapper" className="w-full h-full aspect-video min-h-0">
                 <Viewport3D
                   frames={frames}
                   currentFrameIndex={currentFrameIndex}
@@ -1017,13 +1023,34 @@ export default function App() {
               </div>
             )}
 
-            {/* EDITORIAL MASSIVE WATERMARK OVERLAY */}
-            <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 text-left pointer-events-none select-none z-10 opacity-80">
-              <div className="text-[10px] font-mono uppercase tracking-[0.4em] text-white/40">Current Track</div>
-              <h1 className="editorial-massive-text">MOTION<br />TRACK</h1>
-              <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-white/40 mt-1">
-                Precision Rotoscope &bull; Keyframe Matrix
+          </div>
+
+          {/* EDITORIAL MASSIVE WATERMARK UNDER THE CANVAS */}
+          <div className="bg-white/[0.015] hover:bg-white/[0.035] border border-white/[0.05] hover:border-white/10 p-4 transition-all duration-300 group/brand cursor-pointer select-none text-left relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.4em] text-white/40 group-hover/brand:text-white/60 transition-colors duration-300">Current Track</div>
+                <h1 className="editorial-massive-text group-hover/brand:text-white/95 transition-colors duration-300">MOTION<br />TRACK</h1>
               </div>
+              
+              {/* Sync Status Badge */}
+              <div className="self-start flex items-center gap-2 px-2.5 py-1 border border-white/5 bg-[#080808]/80 text-[9px] font-mono tracking-wider transition-all duration-300">
+                <span className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${
+                  syncStatus === 'saving' 
+                    ? 'bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,0.5)]' 
+                    : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                }`} />
+                <span className={syncStatus === 'saving' ? 'text-yellow-400 font-bold' : 'text-emerald-400 font-medium'}>
+                  {syncStatus === 'saving' ? 'SYNCING MATRIX...' : 'NEURAL LINK SECURED'}
+                </span>
+              </div>
+            </div>
+            
+            <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-white/40 mt-3 group-hover/brand:text-white/60 transition-colors duration-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span>Precision Rotoscope &bull; Keyframe Matrix</span>
+              <span className="text-[9px] text-white/20 uppercase tracking-widest group-hover/brand:text-white/40 transition-colors duration-300 font-sans">
+                {cognitiveMemory.lastAction ? `Last action: ${cognitiveMemory.lastAction}` : 'Status: Optimal'}
+              </span>
             </div>
           </div>
 
