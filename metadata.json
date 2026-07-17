@@ -1,0 +1,6 @@
+{
+  "name": "3D Rotoscope Studio",
+  "description": "An interactive 3D rotoscoping canvas and animation studio. Trace video frames, project glowing strokes into a 3D temporal time-tunnel, and use AI edge detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
