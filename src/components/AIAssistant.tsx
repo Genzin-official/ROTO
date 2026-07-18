@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Stroke, FrameData, CognitiveMemory } from '../types';
 import { extractContoursFromSource } from '../utils/edgeDetector';
 import { Sparkles, Brain, Code, AlertTriangle, Cpu, HelpCircle, Terminal } from 'lucide-react';
+import { clientAutoTrace, clientDescribeFrame } from '../utils/geminiClient';
 
 interface AIAssistantProps {
   currentFrameIndex: number;
@@ -86,28 +87,35 @@ export default function AIAssistant({
     addLog('AI Scribe: Launching Gemini 3.5 Contour Scribe...');
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      let points: Array<{ x: number; y: number }> = [];
+
       if (geminiApiKey) {
-        headers['x-gemini-api-key'] = geminiApiKey;
+        // Run completely client-side in browser using direct Google REST API!
+        const result = await clientAutoTrace(geminiApiKey, frameImg, cognitiveMemory);
+        points = result.points;
+      } else {
+        // Fallback to server proxy
+        const response = await fetch('/api/auto-trace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: frameImg, cognitiveMemory }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || errorData.error || `API server returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        points = data.points;
       }
 
-      const response = await fetch('/api/auto-trace', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ imageBase64: frameImg, cognitiveMemory }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Backend failed or API key unconfigured');
-      }
-
-      const data = await response.json();
-      if (data.points && Array.isArray(data.points) && data.points.length > 0) {
-        addLog(`SUCCESS: Gemini traced ${data.points.length} coordinates.`);
+      if (points && Array.isArray(points) && points.length > 0) {
+        addLog(`SUCCESS: Gemini traced ${points.length} coordinates.`);
 
         const newStroke: Stroke = {
           id: `ai-trace-${Date.now()}`,
-          points: data.points,
+          points: points,
           color: selectedColor,
           width: selectedWidth,
           glowColor: selectedColor + 'aa',
@@ -170,24 +178,31 @@ export default function AIAssistant({
     setAdviceText('');
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      let adviceText = '';
+
       if (geminiApiKey) {
-        headers['x-gemini-api-key'] = geminiApiKey;
+        // Run completely client-side in browser using direct Google REST API!
+        const result = await clientDescribeFrame(geminiApiKey, frameImg);
+        adviceText = result.advice;
+      } else {
+        // Fallback to server proxy
+        const response = await fetch('/api/describe-frame', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: frameImg }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || errorData.error || `API server returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        adviceText = data.advice;
       }
 
-      const response = await fetch('/api/describe-frame', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ imageBase64: frameImg }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Backend unconfigured');
-      }
-
-      const data = await response.json();
-      if (data.advice) {
-        setAdviceText(data.advice);
+      if (adviceText) {
+        setAdviceText(adviceText);
         addLog('SUCCESS: Scene advice compiled.');
       } else {
         throw new Error('Empty advice');

@@ -6,6 +6,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Stroke, Point, FrameData, CognitiveMemory } from '../types';
 import { Sparkles, Trash2, Edit2, RotateCcw } from 'lucide-react';
+import { clientMagicMask } from '../utils/geminiClient';
 
 interface RotoscopeCanvasProps {
   currentFrameIndex: number;
@@ -109,33 +110,47 @@ export default function RotoscopeCanvas({
     }
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (geminiApiKey) {
-        headers['x-gemini-api-key'] = geminiApiKey;
-      }
+      let points: Array<{ x: number; y: number }> = [];
 
-      const response = await fetch('/api/magic-mask', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          imageBase64: frameImg,
+      if (geminiApiKey) {
+        // Run completely client-side in browser using direct Google REST API!
+        const result = await clientMagicMask(
+          geminiApiKey,
+          frameImg,
           clickX,
           clickY,
-          mode: clickX !== undefined ? 'click' : 'subject',
-          cognitiveMemory,
-        }),
-      });
+          clickX !== undefined ? 'click' : 'subject',
+          cognitiveMemory
+        );
+        points = result.points;
+      } else {
+        // Fallback to server proxy
+        const response = await fetch('/api/magic-mask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: frameImg,
+            clickX,
+            clickY,
+            mode: clickX !== undefined ? 'click' : 'subject',
+            cognitiveMemory,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error('API server returned error status.');
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || errorData.error || `API server returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        points = data.points;
       }
 
-      const data = await response.json();
-      if (data.points && Array.isArray(data.points) && data.points.length > 0) {
+      if (points && Array.isArray(points) && points.length > 0) {
         const isRemove = magicMaskMode === 'remove';
         const newStroke: Stroke = {
           id: `magic-mask-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          points: data.points,
+          points: points,
           color: isRemove ? '#ff3b30' : selectedColor,
           width: selectedWidth,
           glowColor: isRemove ? 'rgba(239, 68, 68, 0.45)' : selectedColor + 'aa',
