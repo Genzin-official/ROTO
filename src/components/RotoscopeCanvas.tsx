@@ -22,6 +22,7 @@ interface RotoscopeCanvasProps {
   onSetSelectedStrokeId: (id: string | null) => void;
   pointEditMode: 'add' | 'remove';
   cognitiveMemory?: CognitiveMemory;
+  magicMaskMode?: 'add' | 'remove';
 }
 
 export default function RotoscopeCanvas({
@@ -39,6 +40,7 @@ export default function RotoscopeCanvas({
   onSetSelectedStrokeId,
   pointEditMode,
   cognitiveMemory,
+  magicMaskMode = 'add',
 }: RotoscopeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -123,15 +125,17 @@ export default function RotoscopeCanvas({
 
       const data = await response.json();
       if (data.points && Array.isArray(data.points) && data.points.length > 0) {
+        const isRemove = magicMaskMode === 'remove';
         const newStroke: Stroke = {
           id: `magic-mask-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           points: data.points,
-          color: selectedColor,
+          color: isRemove ? '#ff3b30' : selectedColor,
           width: selectedWidth,
-          glowColor: selectedColor + 'aa',
+          glowColor: isRemove ? 'rgba(239, 68, 68, 0.45)' : selectedColor + 'aa',
           glowWidth: selectedWidth * 3.5,
           isClosed: true,
           style: selectedStyle,
+          blendMode: magicMaskMode === 'remove' ? 'subtract' : 'add',
         };
 
         onUpdateFrameStrokes([...strokes, newStroke]);
@@ -253,7 +257,9 @@ export default function RotoscopeCanvas({
       ctx.lineJoin = 'round';
 
       // Apply line dash or dot styling
-      if (stroke.style === 'dotted') {
+      if (stroke.blendMode === 'subtract') {
+        ctx.setLineDash([6, 4]);
+      } else if (stroke.style === 'dotted') {
         ctx.setLineDash([1, stroke.width * 2]);
       } else if (stroke.style === 'dashed') {
         ctx.setLineDash([12, 6]);
@@ -266,8 +272,8 @@ export default function RotoscopeCanvas({
       // If the path is closed (e.g., polygon vector mask), fill the shape like a high-end mask overlay in Photopea
       if (stroke.isClosed) {
         ctx.save();
-        ctx.fillStyle = strokeColor;
-        ctx.globalAlpha = opacity * 0.28; // semi-transparent mask color
+        ctx.fillStyle = stroke.blendMode === 'subtract' ? 'rgba(239, 68, 68, 0.45)' : strokeColor;
+        ctx.globalAlpha = opacity * (stroke.blendMode === 'subtract' ? 0.35 : 0.28); // semi-transparent mask color
         ctx.shadowBlur = 0; // turn off shadow blur for the inner fill
         ctx.fill();
         ctx.restore();

@@ -80,6 +80,9 @@ interface ControlPanelProps {
   selectedStrokeId: string | null;
   onSetSelectedStrokeId: (id: string | null) => void;
   onVideoUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  magicMaskMode?: 'add' | 'remove';
+  onSetMagicMaskMode?: (mode: 'add' | 'remove') => void;
+  onSetTotalFrames?: (frames: number) => void;
 }
 
 export default function ControlPanel({
@@ -122,6 +125,9 @@ export default function ControlPanel({
   selectedStrokeId,
   onSetSelectedStrokeId,
   onVideoUpload,
+  magicMaskMode = 'add',
+  onSetMagicMaskMode,
+  onSetTotalFrames,
 }: ControlPanelProps) {
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -309,21 +315,61 @@ export default function ControlPanel({
       id="timeline-controls-panel"
       className="bg-[#0a0a0a] border border-white/10 rounded-none p-6 flex flex-col gap-6 shadow-2xl select-none text-left"
     >
-      {/* 1. MEDIA UPLOAD DIVISION */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-white/40 block">
-          Source Media
-        </span>
-        <label className="flex items-center justify-center gap-2 border border-dashed border-white/20 hover:border-white/50 bg-white/5 hover:bg-white/10 transition px-4 py-3 cursor-pointer text-[10px] font-mono font-bold uppercase text-white tracking-wider">
-          <Upload className="w-3.5 h-3.5 text-white/70" />
-          <span>Upload Video</span>
-          <input
-            type="file"
-            accept="video/mp4,video/quicktime,video/webm"
-            onChange={onVideoUpload}
-            className="hidden"
-          />
-        </label>
+      {/* 1. MEDIA UPLOAD DIVISION & TIMELINE LENGTH CONFIG */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-white/40 block">
+            Source Media
+          </span>
+          <label className="flex items-center justify-center gap-2 border border-dashed border-white/20 hover:border-white/50 bg-white/5 hover:bg-white/10 transition px-4 py-3 cursor-pointer text-[10px] font-mono font-bold uppercase text-white tracking-wider">
+            <Upload className="w-3.5 h-3.5 text-white/70" />
+            <span>Upload Video</span>
+            <input
+              type="file"
+              accept="video/mp4,video/quicktime,video/webm"
+              onChange={onVideoUpload}
+              className="hidden"
+            />
+          </label>
+        </div>
+
+        {/* Dynamic Sequence Frame Count Adjuster */}
+        <div className="flex flex-col gap-2 bg-white/[0.02] border border-white/5 p-3">
+          <div className="flex justify-between items-center text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-white/40">
+            <span>Sequence Length</span>
+            <span className="text-cyan-400 font-extrabold font-mono text-[10px]">
+              {totalFrames} FRAMES
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <button
+              onClick={() => onSetTotalFrames?.(Math.max(5, totalFrames - 4))}
+              className="px-2.5 py-1 border border-white/10 bg-[#111111] hover:bg-white/5 hover:border-white/20 text-[10px] font-mono font-bold text-white transition-all cursor-pointer select-none active:scale-95"
+              title="Decrease Timeline Length (-4 frames)"
+            >
+              -4F
+            </button>
+            <input
+              type="range"
+              min={5}
+              max={100}
+              step={1}
+              value={totalFrames}
+              onChange={(e) => onSetTotalFrames?.(Number(e.target.value))}
+              className="flex-1 accent-cyan-400 bg-white/10 h-1 rounded-none cursor-pointer"
+            />
+            <button
+              onClick={() => onSetTotalFrames?.(Math.min(100, totalFrames + 4))}
+              className="px-2.5 py-1 border border-white/10 bg-[#111111] hover:bg-white/5 hover:border-white/20 text-[10px] font-mono font-bold text-white transition-all cursor-pointer select-none active:scale-95"
+              title="Increase Timeline Length (+4 frames)"
+            >
+              +4F
+            </button>
+          </div>
+          <p className="text-[8px] font-mono text-white/35 leading-normal">
+            Dynamic sequence resizing. Preserves existing mask keyframes while extending or cropping timeline instantly. (5 to 100 frames)
+          </p>
+        </div>
       </div>
 
       <div className="h-px bg-white/5" />
@@ -510,6 +556,39 @@ export default function ControlPanel({
               Isolate any visual subject from its background instantly using generative intelligence.
             </p>
 
+            {/* ADD vs REMOVE mask Mode Selector */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[8px] font-mono uppercase tracking-[0.1em] text-white/40 font-bold">Magic Mask Mode</span>
+              <div className="grid grid-cols-2 gap-1.5 p-0.5 bg-black/40 border border-white/10 rounded-none">
+                <button
+                  onClick={() => onSetMagicMaskMode?.('add')}
+                  className={`py-1.5 px-2 text-[9px] font-mono font-bold uppercase transition flex items-center justify-center gap-1.5 ${
+                    magicMaskMode === 'add'
+                      ? 'bg-cyan-500 text-black font-extrabold shadow-[0_0_10px_rgba(6,182,212,0.35)]'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="ADD Mask Mode: Newly generated boundaries will add positive mask areas"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>ADD MASK</span>
+                </button>
+                <button
+                  onClick={() => onSetMagicMaskMode?.('remove')}
+                  className={`py-1.5 px-2 text-[9px] font-mono font-bold uppercase transition flex items-center justify-center gap-1.5 ${
+                    magicMaskMode === 'remove'
+                      ? 'bg-red-500 text-white font-extrabold shadow-[0_0_10px_rgba(239,68,68,0.35)]'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                  title="REMOVE Mask Mode: Generates a red subtractive cutout mask zone to exclude details"
+                >
+                  <Minus className="w-3 h-3" />
+                  <span>REMOVE MASK</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="h-px bg-white/5 my-0.5" />
+
             <div className="flex flex-col gap-2">
               <span className="text-[8px] font-mono uppercase tracking-[0.1em] text-white/40 font-bold">Auto Cutout (BG Removing)</span>
               <button
@@ -525,7 +604,7 @@ export default function ControlPanel({
               </button>
             </div>
 
-            <div className="h-px bg-white/5 my-1" />
+            <div className="h-px bg-white/5 my-0.5" />
 
             <div className="flex flex-col gap-1.5">
               <span className="text-[8px] font-mono uppercase tracking-[0.1em] text-white/40 font-bold">Interactive Click Mode</span>

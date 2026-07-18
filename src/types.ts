@@ -18,6 +18,7 @@ export interface Stroke {
   glowWidth: number;
   isClosed: boolean;
   style: 'neon' | 'laser' | 'dotted' | 'dashed' | 'pulse';
+  blendMode?: 'add' | 'subtract';
 }
 
 export interface FrameData {

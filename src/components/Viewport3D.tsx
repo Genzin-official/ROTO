@@ -326,6 +326,12 @@ export default function Viewport3D({
             ctx.lineJoin = 'round';
             ctx.lineWidth = stroke.width * depthScale;
 
+            if (stroke.blendMode === 'subtract') {
+              ctx.setLineDash([4, 4]);
+            } else {
+              ctx.setLineDash([]);
+            }
+
             // Make non-current frames translucent
             const dist = Math.abs(frame.frameIndex - currentFrameIndex);
             const relativeFade = Math.max(0.12, 1.0 - dist * 0.15);
@@ -338,8 +344,8 @@ export default function Viewport3D({
             // Faint 3D stencil fill for closed masks, mirroring the Photopea look in depth planes
             if (stroke.isClosed) {
               ctx.save();
-              ctx.fillStyle = stroke.color;
-              ctx.globalAlpha = relativeFade * 0.12; // extra faint fill in 3D depth planes
+              ctx.fillStyle = stroke.blendMode === 'subtract' ? 'rgba(239, 68, 68, 0.45)' : stroke.color;
+              ctx.globalAlpha = relativeFade * (stroke.blendMode === 'subtract' ? 0.22 : 0.12); // extra faint fill in 3D depth planes
               ctx.shadowBlur = 0;
               ctx.fill();
               ctx.restore();

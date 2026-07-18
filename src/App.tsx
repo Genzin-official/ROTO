@@ -54,8 +54,6 @@ const PRESET_SAMPLES: VideoSample[] = [
   },
 ];
 
-const TOTAL_FRAMES = 24;
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<'drawing' | '3d'>('drawing');
   const [activeSample, setActiveSample] = useState<VideoSample>(PRESET_SAMPLES[0]);
@@ -64,16 +62,42 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cancelExportRef = useRef(false);
 
-  // Frame sequencer data states
+  // Frame sequencer data states with dynamic sequence support
+  const [totalFrames, setTotalFrames] = useState(24);
+  const [magicMaskMode, setMagicMaskMode] = useState<'add' | 'remove'>('add');
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [frames, setFrames] = useState<FrameData[]>(
-    Array.from({ length: TOTAL_FRAMES }, (_, idx) => ({
+  const [frames, setFrames] = useState<FrameData[]>(() =>
+    Array.from({ length: 24 }, (_, idx) => ({
       frameIndex: idx,
-      timestamp: (idx / TOTAL_FRAMES) * 3, // mock timestamps
+      timestamp: (idx / 24) * 3, // mock timestamps
       strokes: [],
     }))
   );
+
+  // Automatically expand or shrink frames sequence while maintaining existing keyframe vectors
+  useEffect(() => {
+    setFrames((prev) => {
+      if (prev.length === totalFrames) return prev;
+      if (prev.length < totalFrames) {
+        const next = [...prev];
+        for (let idx = prev.length; idx < totalFrames; idx++) {
+          next.push({
+            frameIndex: idx,
+            timestamp: (idx / totalFrames) * 3,
+            strokes: [],
+          });
+        }
+        return next;
+      } else {
+        return prev.slice(0, totalFrames);
+      }
+    });
+
+    if (currentFrameIndex >= totalFrames) {
+      setCurrentFrameIndex(totalFrames - 1);
+    }
+  }, [totalFrames]);
 
   // Brush styling states
   const [selectedColor, setSelectedColor] = useState('#00f0ff');
@@ -262,7 +286,7 @@ export default function App() {
     const duration = video.duration || 1;
     const progress = video.currentTime / duration;
     // Cap to ensure frameIndex doesn't exceed total sequence limit
-    const frameIdx = Math.min(TOTAL_FRAMES - 1, Math.floor(progress * TOTAL_FRAMES));
+    const frameIdx = Math.min(totalFrames - 1, Math.floor(progress * totalFrames));
 
     setCurrentFrameIndex(frameIdx);
   };
@@ -282,7 +306,7 @@ export default function App() {
 
     const video = videoRef.current;
     if (video && video.duration) {
-      video.currentTime = (idx / TOTAL_FRAMES) * video.duration;
+      video.currentTime = (idx / totalFrames) * video.duration;
     }
   };
 
@@ -385,7 +409,7 @@ export default function App() {
 
     if (direction === 'forward') {
       const nextFrameIndex = currentFrameIndex + 1;
-      if (nextFrameIndex < TOTAL_FRAMES) {
+      if (nextFrameIndex < totalFrames) {
         handleSetFrameIndex(nextFrameIndex);
         if (nextSelectedId) {
           setSelectedStrokeId(nextSelectedId);
@@ -475,7 +499,7 @@ export default function App() {
       app: 'Roto3D Studio',
       timestamp: new Date().toISOString(),
       dimensions: { width: 1920, height: 1080 },
-      framesCount: TOTAL_FRAMES,
+      framesCount: totalFrames,
       timeline: frames.map((f) => ({
         frame: f.frameIndex,
         strokes: f.strokes.map((s) => ({
@@ -629,27 +653,27 @@ export default function App() {
 
     // 4. Determine delay per frame
     const duration = video ? video.duration : 4;
-    const frameDelayMs = (duration / TOTAL_FRAMES) * 1000;
+    const frameDelayMs = (duration / totalFrames) * 1000;
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const frameImages: string[] = [];
 
     // 5. Render Loop
     try {
-      for (let fIdx = 0; fIdx < TOTAL_FRAMES; fIdx++) {
+      for (let fIdx = 0; fIdx < totalFrames; fIdx++) {
         if (cancelExportRef.current) {
           throw new Error('Export cancelled by user.');
         }
 
-        setExportProgress(Math.round((fIdx / TOTAL_FRAMES) * 90));
-        setExportMessage(`Rendering Frame ${fIdx + 1} of ${TOTAL_FRAMES}...`);
+        setExportProgress(Math.round((fIdx / totalFrames) * 90));
+        setExportMessage(`Rendering Frame ${fIdx + 1} of ${totalFrames}...`);
         
         // Sync frame preview in main UI
         setCurrentFrameIndex(fIdx);
 
         // Seek video
         if (video) {
-          const frameTime = (fIdx / TOTAL_FRAMES) * video.duration;
+          const frameTime = (fIdx / totalFrames) * video.duration;
           video.currentTime = frameTime;
           
           await new Promise<void>((resolve) => {
@@ -692,7 +716,7 @@ export default function App() {
         ctx.fillText(`ROTO3D DIGITAL RENDER ENGINE // FRAME ${String(fIdx + 1).padStart(2, '0')}`, 24, 40);
         ctx.font = '11px "JetBrains Mono", monospace';
         ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-        ctx.fillText(`SEQUENCE KEY: ROTO3D_CYBER_SEQ | TIMECODE: ${(fIdx * (video ? video.duration : 4) / TOTAL_FRAMES).toFixed(2)}s / ${duration.toFixed(2)}s`, 24, 60);
+        ctx.fillText(`SEQUENCE KEY: ROTO3D_CYBER_SEQ | TIMECODE: ${(fIdx * (video ? video.duration : 4) / totalFrames).toFixed(2)}s / ${duration.toFixed(2)}s`, 24, 60);
         
         // Add watermarks/aesthetic branding
         ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
@@ -754,7 +778,7 @@ export default function App() {
           gifWidth: exportWidth > 640 ? 640 : exportWidth,
           gifHeight: exportHeight > 360 ? 360 : exportHeight,
           interval: frameDelayMs / 1000,
-          numFrames: TOTAL_FRAMES,
+          numFrames: totalFrames,
         }, (obj) => {
           if (cancelExportRef.current) {
             setExportStatus('idle');
@@ -853,7 +877,7 @@ export default function App() {
                 <div className="flex justify-between border-t border-white/5 pt-1.5">
                   <span className="uppercase text-white/30">Target Rate</span>
                   <span className="text-white font-semibold">
-                    {(TOTAL_FRAMES / (videoRef.current ? videoRef.current.duration : 4)).toFixed(1)} FPS
+                    {(totalFrames / (videoRef.current ? videoRef.current.duration : 4)).toFixed(1)} FPS
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-white/5 pt-1.5">
@@ -997,6 +1021,7 @@ export default function App() {
                   onSetSelectedStrokeId={setSelectedStrokeId}
                   pointEditMode={pointEditMode}
                   cognitiveMemory={cognitiveMemory}
+                  magicMaskMode={magicMaskMode}
                 />
 
                 {/* 2D Mode overlay label HUD */}
@@ -1007,7 +1032,7 @@ export default function App() {
 
                 {/* Timeline frame index indicator overlay on top right */}
                 <div className="absolute top-4 right-4 bg-[#080808]/95 border border-white/20 px-3 py-1 text-[9px] font-mono text-cyan-400 select-none pointer-events-none flex items-center gap-1.5 shadow-md font-bold z-20">
-                  <span>FRAME [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(TOTAL_FRAMES).padStart(2, '0')}]</span>
+                  <span>FRAME [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(totalFrames).padStart(2, '0')}]</span>
                 </div>
               </div>
             ) : (
@@ -1016,7 +1041,7 @@ export default function App() {
                 <Viewport3D
                   frames={frames}
                   currentFrameIndex={currentFrameIndex}
-                  totalFrames={TOTAL_FRAMES}
+                  totalFrames={totalFrames}
                   zSpacing={zSpacing}
                   onSetFrameIndex={handleSetFrameIndex}
                 />
@@ -1084,10 +1109,10 @@ export default function App() {
 
               <button
                 onClick={() => {
-                  const nextIdx = Math.min(TOTAL_FRAMES - 1, currentFrameIndex + 1);
+                  const nextIdx = Math.min(totalFrames - 1, currentFrameIndex + 1);
                   handleSetFrameIndex(nextIdx);
                 }}
-                disabled={currentFrameIndex === TOTAL_FRAMES - 1}
+                disabled={currentFrameIndex === totalFrames - 1}
                 className="p-2 border border-white/10 bg-black hover:bg-white/5 text-white/70 hover:text-white transition disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
                 title="Next Frame"
               >
@@ -1100,7 +1125,7 @@ export default function App() {
               <div className="relative h-6 flex items-center bg-black/40 border border-white/5 px-2">
                 {/* Tick Indicators background */}
                 <div className="absolute inset-x-2 h-1 bg-white/10 pointer-events-none flex justify-between items-center">
-                  {Array.from({ length: TOTAL_FRAMES }).map((_, i) => {
+                  {Array.from({ length: totalFrames }).map((_, i) => {
                     const hasStrokes = frames[i]?.strokes.length > 0;
                     return (
                       <span
@@ -1120,7 +1145,7 @@ export default function App() {
                 <input
                   type="range"
                   min={0}
-                  max={TOTAL_FRAMES - 1}
+                  max={totalFrames - 1}
                   value={currentFrameIndex}
                   onChange={(e) => handleSetFrameIndex(Number(e.target.value))}
                   className="w-full absolute inset-0 opacity-0 h-full cursor-pointer z-10"
@@ -1129,7 +1154,7 @@ export default function App() {
                 {/* Progress bar overlay */}
                 <div
                   className="h-1 bg-cyan-400 pointer-events-none absolute left-2"
-                  style={{ width: `calc(${(currentFrameIndex / (TOTAL_FRAMES - 1)) * 100}% - 4px)` }}
+                  style={{ width: `calc(${(currentFrameIndex / (totalFrames - 1)) * 100}% - 4px)` }}
                 />
               </div>
 
@@ -1154,8 +1179,8 @@ export default function App() {
               <div className="text-sm font-mono font-bold text-white mt-1 leading-none flex items-baseline gap-1">
                 <span className="text-cyan-400">{String(currentFrameIndex + 1).padStart(2, '0')}</span>
                 <span className="text-white/30 text-xs">/</span>
-                <span>{String(TOTAL_FRAMES).padStart(2, '0')}</span>
-                <span className="text-[10px] text-white/40 font-normal ml-1">({TOTAL_FRAMES} FRAMES)</span>
+                <span>{String(totalFrames).padStart(2, '0')}</span>
+                <span className="text-[10px] text-white/40 font-normal ml-1">({totalFrames} FRAMES)</span>
               </div>
             </div>
           </div>
@@ -1225,7 +1250,10 @@ export default function App() {
         <div className="lg:col-span-4 flex flex-col gap-6">
           <ControlPanel
             currentFrameIndex={currentFrameIndex}
-            totalFrames={TOTAL_FRAMES}
+            totalFrames={totalFrames}
+            onSetTotalFrames={setTotalFrames}
+            magicMaskMode={magicMaskMode}
+            onSetMagicMaskMode={setMagicMaskMode}
             isPlaying={isPlaying}
             onSetIsPlaying={setIsPlaying}
             onSetFrameIndex={handleSetFrameIndex}
