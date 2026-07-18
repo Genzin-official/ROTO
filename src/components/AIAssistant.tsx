@@ -17,6 +17,7 @@ interface AIAssistantProps {
   selectedWidth: number;
   selectedStyle: Stroke['style'];
   cognitiveMemory?: CognitiveMemory;
+  geminiApiKey?: string;
 }
 
 export default function AIAssistant({
@@ -28,6 +29,7 @@ export default function AIAssistant({
   selectedWidth,
   selectedStyle,
   cognitiveMemory,
+  geminiApiKey,
 }: AIAssistantProps) {
   const [logs, setLogs] = useState<string[]>([
     'SYSTEM: Roto3D Assistant Core initialized.',
@@ -84,9 +86,14 @@ export default function AIAssistant({
     addLog('AI Scribe: Launching Gemini 3.5 Contour Scribe...');
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (geminiApiKey) {
+        headers['x-gemini-api-key'] = geminiApiKey;
+      }
+
       const response = await fetch('/api/auto-trace', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ imageBase64: frameImg, cognitiveMemory }),
       });
 
@@ -163,9 +170,14 @@ export default function AIAssistant({
     setAdviceText('');
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (geminiApiKey) {
+        headers['x-gemini-api-key'] = geminiApiKey;
+      }
+
       const response = await fetch('/api/describe-frame', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ imageBase64: frameImg }),
       });
 

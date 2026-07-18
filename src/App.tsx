@@ -25,6 +25,8 @@ import {
   Eye,
   Activity,
   HeartHandshake,
+  Settings,
+  Key,
 } from 'lucide-react';
 
 const PRESET_SAMPLES: VideoSample[] = [
@@ -61,6 +63,22 @@ export default function App() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cancelExportRef = useRef(false);
+
+  // Gemini API Key & Settings Modal States
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('ROTO3D_GEMINI_API_KEY') || '');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [serverHasKey, setServerHasKey] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.geminiApiKeyConfigured) {
+          setServerHasKey(true);
+        }
+      })
+      .catch((e) => console.error('Error fetching API health:', e));
+  }, []);
 
   // Frame sequencer data states with dynamic sequence support
   const [totalFrames, setTotalFrames] = useState(24);
@@ -289,6 +307,20 @@ export default function App() {
     const frameIdx = Math.min(totalFrames - 1, Math.floor(progress * totalFrames));
 
     setCurrentFrameIndex(frameIdx);
+  };
+
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (video && video.duration) {
+      // Standard video framerate estimation (24 FPS) to fit frames precisely to video duration
+      // e.g. 1.5s -> 36 frames, 2.25s -> 54 frames
+      const calculatedFrames = Math.max(5, Math.min(100, Math.round(video.duration * 24)));
+      setTotalFrames(calculatedFrames);
+      
+      if (currentFrameIndex >= calculatedFrames) {
+        setCurrentFrameIndex(calculatedFrames - 1);
+      }
+    }
   };
 
   const handleVideoEnded = () => {
@@ -933,7 +965,7 @@ export default function App() {
         </div>
 
         {/* Global Hub stats / Metadata block */}
-        <div className="flex items-center gap-8 text-[10px] font-mono text-white/60">
+        <div className="flex items-center gap-6 text-[10px] font-mono text-white/60">
           <div className="flex items-center gap-1.5">
             <span className="text-white/40">Sequence:</span>
             <span className="text-white uppercase font-bold tracking-wider">NEON_CITY_EXT_{String(currentFrameIndex + 400).padStart(4, '0')}</span>
@@ -943,6 +975,15 @@ export default function App() {
             <span className="text-white/40">Interpolation:</span>
             <span className="text-white font-semibold">Bezier / Sub-pixel</span>
           </div>
+
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-white/20 bg-white/5 hover:bg-white/10 text-white hover:border-white transition cursor-pointer active:scale-95 select-none"
+            title="System Settings"
+          >
+            <Settings className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="uppercase font-bold tracking-wider text-[9px]">Settings</span>
+          </button>
         </div>
       </header>
 
@@ -991,11 +1032,12 @@ export default function App() {
             {activeTab === 'drawing' ? (
               <div id="video-canvas-stage-wrapper" className="relative w-full h-full aspect-video rounded-none overflow-hidden bg-black flex items-center justify-center">
                 
-                {/* Embedded HTML5 Core Player */}
+                 {/* Embedded HTML5 Core Player */}
                 <video
                   ref={videoRef}
                   src={videoUrl}
                   onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
                   onEnded={handleVideoEnded}
                   loop={false}
                   muted
@@ -1022,6 +1064,7 @@ export default function App() {
                   pointEditMode={pointEditMode}
                   cognitiveMemory={cognitiveMemory}
                   magicMaskMode={magicMaskMode}
+                  geminiApiKey={geminiApiKey}
                 />
 
                 {/* 2D Mode overlay label HUD */}
@@ -1032,7 +1075,7 @@ export default function App() {
 
                 {/* Timeline frame index indicator overlay on top right */}
                 <div className="absolute top-4 right-4 bg-[#080808]/95 border border-white/20 px-3 py-1 text-[9px] font-mono text-cyan-400 select-none pointer-events-none flex items-center gap-1.5 shadow-md font-bold z-20">
-                  <span>FRAME [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(totalFrames).padStart(2, '0')}]</span>
+                  <span>Frames [{String(currentFrameIndex + 1).padStart(2, '0')}/{String(totalFrames).padStart(2, '0')}]</span>
                 </div>
               </div>
             ) : (
@@ -1299,9 +1342,103 @@ export default function App() {
             selectedWidth={selectedWidth}
             selectedStyle={selectedStyle}
             cognitiveMemory={cognitiveMemory}
+            geminiApiKey={geminiApiKey}
           />
         </div>
       </main>
+
+      {/* SETTINGS DIALOG MODAL */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0c0c0c] border border-white/15 w-full max-w-md p-6 relative flex flex-col gap-6 shadow-2xl select-none">
+            
+            {/* Modal Title */}
+            <div className="flex justify-between items-center border-b border-white/10 pb-4">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-mono font-extrabold uppercase tracking-[0.25em] text-white">
+                  System Configuration
+                </span>
+              </div>
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-white/40 hover:text-white transition font-mono text-[10px] uppercase tracking-wider cursor-pointer select-none active:scale-95"
+              >
+                [CLOSE]
+              </button>
+            </div>
+
+            {/* Status Section */}
+            <div className="flex items-center justify-between bg-white/[0.02] border border-white/5 p-3 font-mono text-[9px] uppercase tracking-wider">
+              <span className="text-white/40">Auth Credentials Status</span>
+              <div className="flex items-center gap-2">
+                {geminiApiKey ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
+                    <span className="text-cyan-400 font-bold">USER_KEY ACTIVE</span>
+                  </>
+                ) : serverHasKey ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
+                    <span className="text-green-500 font-bold">SERVER_KEY ACTIVE</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_#f59e0b]" />
+                    <span className="text-amber-500 font-bold">KEY MISSING</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Input Form Section */}
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-between items-center text-[10px] font-mono font-bold uppercase tracking-widest text-white/50">
+                <span className="flex items-center gap-1.5">
+                  <Key className="w-3 h-3 text-white/50" />
+                  Gemini API Key
+                </span>
+                <span className="text-[8px] text-white/30">(Saved locally in browser)</span>
+              </div>
+              
+              <div className="relative">
+                <input
+                  type="password"
+                  placeholder={serverHasKey ? "••••••••••••••••••••••••••••••••" : "Enter your custom Gemini API key..."}
+                  value={geminiApiKey}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    setGeminiApiKey(val);
+                    if (val) {
+                      localStorage.setItem('ROTO3D_GEMINI_API_KEY', val);
+                    } else {
+                      localStorage.removeItem('ROTO3D_GEMINI_API_KEY');
+                    }
+                  }}
+                  className="w-full bg-black border border-white/20 focus:border-cyan-400 focus:outline-none px-3 py-2.5 text-xs font-mono text-white tracking-widest transition-all"
+                />
+              </div>
+
+              <p className="text-[9px] font-mono text-white/35 leading-relaxed">
+                If configured, calculations like the AI Auto-Trace, Magic Mask Cutouts, and Scene Advices are authorized directly using your private API key. If left blank, it falls back to the default server-side configuration.
+              </p>
+            </div>
+
+            {/* Save Buttons & Actions */}
+            <div className="flex gap-3 border-t border-white/10 pt-4">
+              <button
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  triggerToast("System settings synced successfully");
+                }}
+                className="flex-1 bg-white hover:bg-white/90 text-black border border-white font-mono text-[10px] font-bold tracking-widest py-2.5 uppercase transition cursor-pointer select-none text-center active:scale-95"
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

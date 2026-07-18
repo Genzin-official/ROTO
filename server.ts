@@ -19,25 +19,20 @@ const PORT = 3000;
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
-// Lazy initializer for Google GenAI client (prevents crash if key is missing)
-let aiClient: GoogleGenAI | null = null;
-
-function getAiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error('GEMINI_API_KEY environment variable is not configured.');
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
+// Lazy initializer / generator for Google GenAI client (prevents crash if key is missing)
+function getAiClient(customKey?: string): GoogleGenAI {
+  const key = customKey || process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error('GEMINI_API_KEY environment variable or custom key is not configured.');
   }
-  return aiClient;
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 }
 
 // ==========================================
@@ -65,7 +60,8 @@ app.post('/api/auto-trace', async (req, res) => {
     // Strip header prefix if present (e.g. "data:image/png;base64,")
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const ai = getAiClient();
+    const customKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const ai = getAiClient(customKey);
 
     // Setup input parts
     const imagePart = {
@@ -141,7 +137,8 @@ app.post('/api/magic-mask', async (req, res) => {
     // Strip header prefix if present (e.g. "data:image/png;base64,")
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
-    const ai = getAiClient();
+    const customKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const ai = getAiClient(customKey);
 
     // Setup input parts
     const imagePart = {
@@ -218,7 +215,8 @@ app.post('/api/describe-frame', async (req, res) => {
     }
 
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-    const ai = getAiClient();
+    const customKey = req.headers['x-gemini-api-key'] as string | undefined;
+    const ai = getAiClient(customKey);
 
     const imagePart = {
       inlineData: {

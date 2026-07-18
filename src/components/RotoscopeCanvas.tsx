@@ -23,6 +23,7 @@ interface RotoscopeCanvasProps {
   pointEditMode: 'add' | 'remove';
   cognitiveMemory?: CognitiveMemory;
   magicMaskMode?: 'add' | 'remove';
+  geminiApiKey?: string;
 }
 
 export default function RotoscopeCanvas({
@@ -41,6 +42,7 @@ export default function RotoscopeCanvas({
   pointEditMode,
   cognitiveMemory,
   magicMaskMode = 'add',
+  geminiApiKey,
 }: RotoscopeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -107,9 +109,14 @@ export default function RotoscopeCanvas({
     }
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (geminiApiKey) {
+        headers['x-gemini-api-key'] = geminiApiKey;
+      }
+
       const response = await fetch('/api/magic-mask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           imageBase64: frameImg,
           clickX,
