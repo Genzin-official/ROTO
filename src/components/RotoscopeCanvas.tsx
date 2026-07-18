@@ -442,8 +442,8 @@ export default function RotoscopeCanvas({
     return Math.sqrt(dx * dx + dy * dy) < 3.0;
   };
 
-  // Convert mouse event coordinates to normalized (0 - 100) points
-  const getNormalizedPoint = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
+  // Convert mouse or pointer event coordinates to normalized (0 - 100) points
+  const getNormalizedPoint = (e: React.MouseEvent<HTMLCanvasElement> | React.PointerEvent<HTMLCanvasElement>): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
@@ -531,8 +531,8 @@ export default function RotoscopeCanvas({
     return false;
   };
 
-  // Drawing mouse event handlers
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Drawing pointer and mouse event handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return; // Only left click
     const pt = getNormalizedPoint(e);
 
@@ -670,7 +670,7 @@ export default function RotoscopeCanvas({
     setActivePoints([pt]);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.PointerEvent<HTMLCanvasElement>) => {
     const pt = getNormalizedPoint(e);
 
     if (selectedTool === 'eraser') {
@@ -793,9 +793,9 @@ export default function RotoscopeCanvas({
         id="rotoscope-drawing-canvas"
         width={canvasSize.width}
         height={canvasSize.height}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onPointerDown={handleMouseDown}
+        onPointerMove={handleMouseMove}
+        onPointerUp={handleMouseUp}
         onContextMenu={handleContextMenu}
         className="block touch-none"
       />

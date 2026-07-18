@@ -953,7 +953,7 @@ export default function App() {
       )}
 
       {/* HEADER SECTION (EDITORIAL THEME: Minimalist, tracked spacing, crisp fine borders) */}
-      <header id="app-header-nav" className="border-b border-white/10 bg-[#080808] sticky top-0 z-40 px-8 py-5 flex items-center justify-between">
+      <header id="app-header-nav" className="border-b border-white/10 bg-[#080808] sticky top-0 z-40 px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="text-xs uppercase font-extrabold tracking-[0.3em] text-white">
             Rotoscope Pro v2.4
@@ -965,8 +965,8 @@ export default function App() {
         </div>
 
         {/* Global Hub stats / Metadata block */}
-        <div className="flex items-center gap-6 text-[10px] font-mono text-white/60">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-4 sm:gap-6 text-[10px] font-mono text-white/60">
+          <div className="hidden sm:flex items-center gap-1.5">
             <span className="text-white/40">Sequence:</span>
             <span className="text-white uppercase font-bold tracking-wider">NEON_CITY_EXT_{String(currentFrameIndex + 400).padStart(4, '0')}</span>
           </div>
@@ -1217,7 +1217,7 @@ export default function App() {
             </div>
 
             {/* Below right frame indicator showing how many frames are in the video */}
-            <div className="text-right flex flex-col justify-center border-l border-white/10 pl-4 h-10 select-none">
+            <div className="text-left md:text-right flex flex-col justify-center border-t border-t-white/5 md:border-t-0 md:border-l md:border-white/10 pt-3 md:pt-0 md:pl-4 h-auto md:h-10 select-none w-full md:w-auto">
               <div className="text-[10px] font-mono text-white/40 uppercase tracking-widest leading-none">Timeline Index</div>
               <div className="text-sm font-mono font-bold text-white mt-1 leading-none flex items-baseline gap-1">
                 <span className="text-cyan-400">{String(currentFrameIndex + 1).padStart(2, '0')}</span>
